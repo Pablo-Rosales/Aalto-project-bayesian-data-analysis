@@ -21,8 +21,6 @@ library(shinystan)
 library(bayesplot)
 library(loo)
 library(dlookr)
-install.packages("GGally")
-install.packages("ggplot2")
 ```
 
 # Data
@@ -31,15 +29,14 @@ install.packages("ggplot2")
 heart_data = read.csv('heartdisease.csv')
 names(heart_data) <- c('age', 'sex', 'chest_pain_type', 'resting_blood_pressure', 'cholesterol', 'fasting_blood_sugar', 'rest_ecg', 'max_heart_rate_achieved',
        'exercise_induced_angina', 'st_depression', 'st_slope', 'num_major_vessels', 'thalassemia', 'target')
-print(heart_data)
+head(heart_data)
 ```
 
 ```{r}
 describe(heart_data)
 ```
 
+
 ```{r}
-ggpairs(heart_data)
-
+plot_correlate(heart_data)
 ```
-
