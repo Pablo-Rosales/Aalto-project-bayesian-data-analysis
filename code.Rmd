@@ -22,22 +22,20 @@ library(bayesplot)
 library(loo)
 library(dlookr)
 library(corrplot)
+library(rstanarm)
 ```
 
-# Data
-
+# Heart Data
 ```{r}
 heart_data = read.csv('heartdisease.csv')
 names(heart_data) <- c('age', 'sex', 'chest_pain_type', 'resting_blood_pressure', 'cholesterol', 'fasting_blood_sugar', 'rest_ecg', 'max_heart_rate_achieved',
        'exercise_induced_angina', 'st_depression', 'st_slope', 'num_major_vessels', 'thalassemia', 'target')
 head(heart_data)
-```
-
-```{r}
 describe(heart_data)
 ```
 
 
+# Full Cancer Data
 ```{r}
 cancer_data = read.csv('cancer.csv')
 
@@ -46,10 +44,10 @@ cancer_data[cancer_data == "M"] <- as.numeric(1)
 
 cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
 
-print(cancer_data)
-corrplot(cor(cancer_data[,2:12]))
+corrplot(cor(cancer_data[,1:32]))
+corrplot(cor(heart_data))
 ```
-
+# Removing columns
 ```{r}
 cancer_data$radius_mean <- NULL
 cancer_data$perimeter_mean <- NULL
@@ -71,6 +69,7 @@ cancer_data$area_worst <- NULL
 cancer_data$texture_worst <- NULL
 ```
 
+
 ```{r}
 head(cancer_data)
 corrplot(cor(cancer_data))
@@ -80,30 +79,98 @@ hist(cancer_data$smoothness_mean)
 hist(cancer_data$symmetry_mean)
 hist(cancer_data$texture_se)
 ```
-
+## Scaling
 ```{r}
+scaled_cancer_data <- cancer_data
+col_names <- colnames(cancer_data)
+
 scaled_cancer_data[,1:2] <- cancer_data[,1:2]
 scaled_cancer_data[,3:18] <- scale(cancer_data[,3:18])
-  
-model_data <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$V3))
-model_stan <- rstan::stan_model(file = "models/model1.stan")
-model_model <- rstan::sampling(model_stan, data = model_data)
+colnames(scaled_cancer_data) <- col_names
+head(scaled_cancer_data)
+```
+
+# Linear Model
+
+```{r}
+linear_model_normal <- rstan::stan_model(file = "models/linear_model_normal.stan")
+linear_model_bernoulli <- rstan::stan_model(file = "models/linear_model_bernoulli.stan")
+linear_model <- linear_model_bernoulli
+```
+
+# Linear Model - texture_mean
+```{r}
+linear_data_1 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$texture_mean))
+linear_sampling_1 <- rstan::sampling(linear_model, data = linear_data_1, refresh=0)
+```
+
+# Linear Model - area_mean
+```{r}
+linear_data_2 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$area_mean))
+linear_sampling_2 <- rstan::sampling(linear_model, data = linear_data_2, refresh=0)
+```
+
+# Linear Model - smoothness_mean
+```{r}
+linear_data_3 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$smoothness_mean))
+linear_sampling_3 <- rstan::sampling(linear_model, data = linear_data_3, refresh=0)
+```
+
+# Linear Model - concavity_mean
+```{r}
+linear_data_4 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$concavity_mean))
+linear_sampling_4 <- rstan::sampling(linear_model, data = linear_data_4, refresh=0)
 ```
 
 ```{r}
-monitor(model_model)
+alpah_plot_df <- data.frame(qsec = c(c(extract(linear_sampling_1, pars = 'alpha', permuted = TRUE)$alpha),
+                               c(extract(linear_sampling_2, pars = 'alpha', permuted = TRUE)$alpha),
+                               c(extract(linear_sampling_3, pars = 'alpha', permuted = TRUE)$alpha),
+                               c(extract(linear_sampling_4, pars = 'alpha', permuted = TRUE)$alpha)),
+                      color_map=rep(c("texture_mean","area_mean","smoothness_mean","concavity_mean"),
+                                         times=c(100,100,100,100)))
+ggplot(alpah_plot_df, aes(qsec, color = color_map)) +
+  geom_density() +
+  #scale_color_brewer(palette = "Set1")  +
+  ggtitle("alpha distribution") +
+  theme_bw()
+```
+# Plot the model
+```{r}
+plot(scaled_cancer_data$texture_mean, scaled_cancer_data$diagnosis)
+params = extract(linear_sampling_1)
+alpha = mean(params$alpha)
+beta = mean(params$beta)
+abline(a=alpha, b=beta)
+```
 
-model_log_lik <- extract_log_lik(model_model, parameter_name = "log_lik", merge_chains = FALSE)
+# Plot simulated data
+```{r}
+plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
+params=extract(linear_sampling_1)
 
+for (i in 1:10){
+  lines(density(params$y_sim[i,]), col="blue")
+}
+```
+
+```{r}
+monitor(linear_sampling_1)
+model_log_lik <- extract_log_lik(linear_sampling_1, parameter_name = "log_lik", merge_chains = FALSE)
 model_r_eff <- relative_eff(exp(model_log_lik), cores = 2)
-
 model_loo <- loo(model_log_lik, r_eff = model_r_eff, cores = 2)
-print(model_loo)
-
 pooled_k_values <- model_loo$diagnostics$pareto_k
-print(model_loo$diagnostics)
+```
+
+```{r}
+print(model_loo)
 hist(pooled_k_values)
 ```
+
+
+
+
+
 
 
 
