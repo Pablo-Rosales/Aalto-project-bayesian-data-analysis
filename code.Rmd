@@ -1,10 +1,16 @@
 ---
-title: "project"
+title: "Project work"
 author: "Anonymous"
 date: "11/14/2020"
-output: html_document
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    toc: yes
+    toc_depth: '1'
+    df_print: paged
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -23,61 +29,61 @@ library(loo)
 library(dlookr)
 library(corrplot)
 library(rstanarm)
+SEED <- 48927
 ```
 
-# Heart Data
+# Data
+## Option 1. Heart Disease dataset
 ```{r}
 heart_data = read.csv('heartdisease.csv')
 names(heart_data) <- c('age', 'sex', 'chest_pain_type', 'resting_blood_pressure', 'cholesterol', 'fasting_blood_sugar', 'rest_ecg', 'max_heart_rate_achieved',
        'exercise_induced_angina', 'st_depression', 'st_slope', 'num_major_vessels', 'thalassemia', 'target')
 head(heart_data)
+corrplot(cor(heart_data))
 describe(heart_data)
 ```
 
-
-# Full Cancer Data
+## Option 2. Breast cancer dataset
 ```{r}
 cancer_data = read.csv('cancer.csv')
-
 cancer_data[cancer_data == "B"] <- as.numeric(0)
 cancer_data[cancer_data == "M"] <- as.numeric(1)
-
 cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
-
-corrplot(cor(cancer_data[,1:32]))
-corrplot(cor(heart_data))
+corrplot(cor(cancer_data[,2:12]))
+describe(cancer_data)
+head(cancer_data)
 ```
-# Removing columns
+
+# Preprocessing
+## Feature selection
+For this task, we reduce the number of input variables in order to develop our models. As seen in the correlation map, variables such as **radius_mean**, **perimeter_mean** and **area_mean** are highly correlated. Thus, we discard the variables **radius_mean**, **perimeter_mean**. Etc...
 ```{r}
 cancer_data$radius_mean <- NULL
 cancer_data$perimeter_mean <- NULL
 cancer_data$compactness_mean <- NULL
 cancer_data$concave.points_mean <- NULL
-
 cancer_data$radius_se <- NULL
 cancer_data$perimeter_se <- NULL
 cancer_data$compactness_se <- NULL
 cancer_data$concave.points_se <- NULL
-
 cancer_data$radius_worst <- NULL
 cancer_data$perimeter_worst <- NULL
 cancer_data$compactness_worst <- NULL
 cancer_data$concave.points_worst <- NULL
 cancer_data$X <- NULL
-
 cancer_data$area_worst <- NULL
 cancer_data$texture_worst <- NULL
 ```
 
-
+### Selected variables
 ```{r}
 head(cancer_data)
 corrplot(cor(cancer_data))
-hist(cancer_data$texture_mean)
-hist(cancer_data$area_mean)
-hist(cancer_data$smoothness_mean)
-hist(cancer_data$symmetry_mean)
-hist(cancer_data$texture_se)
+#hist(cancer_data$texture_mean)
+#hist(cancer_data$area_mean)
+#hist(cancer_data$smoothness_mean)
+#hist(cancer_data$symmetry_mean)
+#hist(cancer_data$texture_se)
 ```
 ## Scaling
 ```{r}
@@ -91,7 +97,6 @@ head(scaled_cancer_data)
 ```
 
 # Linear Model
-
 ```{r}
 linear_model_normal <- rstan::stan_model(file = "models/linear_model_normal.stan")
 linear_model_bernoulli <- rstan::stan_model(file = "models/linear_model_bernoulli.stan")
@@ -168,15 +173,27 @@ hist(pooled_k_values)
 ```
 
 
+# Convergence diagnostics
+## $\hat{R}
+$\hat{R}$ can be used to monitor if a group of chains has converged to the target distribution. This can be done by comparing the between and within-chain estimate for model parameters. If chains have not converged, meaning that they have not mixed well, $\hat{R}$ will be greater than one. If chains have converged, the $\hat{R}$ value will be virtually one.
 
+As seen in the `monitor` outputs, all $\hat{R}$ values were 1 or close to 1. (Por concluir)
 
+## ESS
+We would like to have a diagnostic that tell us when the weights are problematic, as we could have vastly imbalanced weights. In this case, we could use **effective sample size ($S_{eff}$)**, a quantitative measure of efficiency in **importance sampling**. $S_{eff}$ represents the number of independent samples required to obtain an importance sampling estimate with about the same efficiency as if we would have used all the samples.
 
+`monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good). As seen in the `monitor` outputs, our ESS values are way higher than 100, which established that our values are good. (Aún no está claro que esto sea válido, preguntar a TA)
 
+## Divergences
 
+A divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value [...]. Habrá que indicar si hemos obtenido divergencias o no en los modelos más adelante con la siguiente función:
 
+```{r}
+check_hmc_diagnostics(model_sampling)
+```
 
+As seen in the obtained results, we obtained 0 divergences... etc
 
+# Model comparison
 
-
-
-
+# Sensitivity analysis
