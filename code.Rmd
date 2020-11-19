@@ -38,8 +38,8 @@ SEED <- 48927
 heart_data = read.csv('heartdisease.csv')
 names(heart_data) <- c('age', 'sex', 'chest_pain_type', 'resting_blood_pressure', 'cholesterol', 'fasting_blood_sugar', 'rest_ecg', 'max_heart_rate_achieved',
        'exercise_induced_angina', 'st_depression', 'st_slope', 'num_major_vessels', 'thalassemia', 'target')
-head(heart_data)
 corrplot(cor(heart_data))
+head(heart_data)
 describe(heart_data)
 ```
 
@@ -49,9 +49,9 @@ cancer_data = read.csv('cancer.csv')
 cancer_data[cancer_data == "B"] <- as.numeric(0)
 cancer_data[cancer_data == "M"] <- as.numeric(1)
 cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
-corrplot(cor(cancer_data[,2:12]))
-describe(cancer_data)
-head(cancer_data)
+corrplot(cor(cancer_data[,2:32]))
+describe(cancer_data[,2:32])
+head(cancer_data[,2:32])
 ```
 
 # Preprocessing
@@ -85,6 +85,7 @@ corrplot(cor(cancer_data))
 #hist(cancer_data$symmetry_mean)
 #hist(cancer_data$texture_se)
 ```
+
 ## Scaling
 ```{r}
 scaled_cancer_data <- cancer_data
@@ -127,19 +128,24 @@ linear_data_4 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_
 linear_sampling_4 <- rstan::sampling(linear_model, data = linear_data_4, refresh=0)
 ```
 
+# Linear Model - symmetry_mean
 ```{r}
-alpah_plot_df <- data.frame(qsec = c(c(extract(linear_sampling_1, pars = 'alpha', permuted = TRUE)$alpha),
-                               c(extract(linear_sampling_2, pars = 'alpha', permuted = TRUE)$alpha),
-                               c(extract(linear_sampling_3, pars = 'alpha', permuted = TRUE)$alpha),
-                               c(extract(linear_sampling_4, pars = 'alpha', permuted = TRUE)$alpha)),
-                      color_map=rep(c("texture_mean","area_mean","smoothness_mean","concavity_mean"),
-                                         times=c(100,100,100,100)))
-ggplot(alpah_plot_df, aes(qsec, color = color_map)) +
-  geom_density() +
-  #scale_color_brewer(palette = "Set1")  +
-  ggtitle("alpha distribution") +
-  theme_bw()
+linear_data_5 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$symmetry_mean))
+linear_sampling_5 <- rstan::sampling(linear_model, data = linear_data_5, refresh=0)
 ```
+
+# Linear Model - fractal_dimension_mean
+```{r}
+linear_data_6 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$fractal_dimension_mean))
+linear_sampling_6 <- rstan::sampling(linear_model, data = linear_data_6, refresh=0)
+```
+
+# Linear Model - symmetry_se
+```{r}
+linear_data_7 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$symmetry_se))
+linear_sampling_7 <- rstan::sampling(linear_model, data = linear_data_7, refresh=0)
+```
+
 # Plot the model
 ```{r}
 plot(scaled_cancer_data$texture_mean, scaled_cancer_data$diagnosis)
@@ -151,8 +157,28 @@ abline(a=alpha, b=beta)
 
 # Plot simulated data
 ```{r}
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
+plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_1)
+
+for (i in 1:10){
+  lines(density(params$y_sim[i,]), col="blue")
+}
+```
+
+# Plot simulated data
+```{r}
+plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
+params=extract(linear_sampling_6)
+
+for (i in 1:10){
+  lines(density(params$y_sim[i,]), col="blue")
+}
+```
+
+# Plot simulated data
+```{r}
+plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
+params=extract(linear_sampling_7)
 
 for (i in 1:10){
   lines(density(params$y_sim[i,]), col="blue")
@@ -189,7 +215,7 @@ We would like to have a diagnostic that tell us when the weights are problematic
 A divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value [...]. Habrá que indicar si hemos obtenido divergencias o no en los modelos más adelante con la siguiente función:
 
 ```{r}
-check_hmc_diagnostics(model_sampling)
+check_hmc_diagnostics(linear_sampling_1)
 ```
 
 As seen in the obtained results, we obtained 0 divergences... etc
