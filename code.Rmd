@@ -45,7 +45,7 @@ describe(heart_data)
 
 ## Option 2. Breast cancer dataset
 ```{r}
-cancer_data = read.csv('cancer.csv')[1:100,]
+cancer_data = read.csv('cancer.csv')
 cancer_data[cancer_data == "B"] <- as.numeric(0)
 cancer_data[cancer_data == "M"] <- as.numeric(1)
 cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
@@ -72,6 +72,8 @@ cancer_data$perimeter_worst <- NULL
 cancer_data$compactness_worst <- NULL
 cancer_data$concave.points_worst <- NULL
 cancer_data$X <- NULL
+
+cancer_data_mv <- cancer_data
 cancer_data$area_worst <- NULL
 cancer_data$texture_worst <- NULL
 ```
@@ -80,6 +82,7 @@ cancer_data$texture_worst <- NULL
 ```{r}
 head(cancer_data)
 corrplot(cor(cancer_data))
+corrplot(cor(cancer_data_mv))
 #hist(cancer_data$texture_mean)
 #hist(cancer_data$area_mean)
 #hist(cancer_data$smoothness_mean)
@@ -91,11 +94,18 @@ corrplot(cor(cancer_data))
 ```{r}
 scaled_cancer_data <- cancer_data
 col_names <- colnames(cancer_data)
+scaled_cancer_data_mv <- cancer_data_mv
+col_names_mv <- colnames(cancer_data_mv)
 
 scaled_cancer_data[,1:2] <- cancer_data[,1:2]
 scaled_cancer_data[,3:18] <- scale(cancer_data[,3:18])
 colnames(scaled_cancer_data) <- col_names
 head(scaled_cancer_data)
+
+scaled_cancer_data_mv[,1:2] <- cancer_data_mv[,1:2]
+scaled_cancer_data_mv[,3:20] <- scale(cancer_data_mv[,3:20])
+colnames(scaled_cancer_data_mv) <- col_names_mv
+head(scaled_cancer_data_mv)
 ```
 
 # Linear Model
@@ -212,54 +222,54 @@ abline(a=alpha, b=beta)
 
 # Plot simulated data
 ```{r}
-par(mfrow=c(2,2))
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
+
 params=extract(linear_sampling_1)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_2)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_3)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_4)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_5)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_6)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_7)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), col="red", lwd=4)
 params=extract(linear_sampling_8)
-for (i in 1:10){
-  lines(density(params$y_sim[i,]), col="blue")
-}
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_9)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_10)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_11)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_12)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_13)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_14)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_15)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
+
+params=extract(linear_sampling_16)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 ```
 
 
@@ -301,3 +311,84 @@ As seen in the obtained results, we obtained 0 divergences... etc
 # Model comparison
 
 # Sensitivity analysis
+
+
+
+
+
+
+
+# Multivariate Model
+```{r}
+linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
+```
+
+# Multivariate Model - w/ Mean Variables
+```{r}
+multivariate_mean_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
+                               y=c(scaled_cancer_data_mv$diagnosis), 
+                               x_1=c(scaled_cancer_data_mv$texture_mean),
+                               x_2=c(scaled_cancer_data_mv$area_mean),
+                               x_3=c(scaled_cancer_data_mv$smoothness_mean),
+                               x_4=c(scaled_cancer_data_mv$concavity_mean),
+                               x_5=c(scaled_cancer_data_mv$symmetry_mean),
+                               x_6=c(scaled_cancer_data_mv$fractal_dimension_mean))
+multivariate_mean_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
+                                              data = multivariate_mean_data, refresh=0)
+```
+
+# Multivariate Model - w/ SE Variables
+```{r}
+multivariate_se_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
+                               y=c(scaled_cancer_data_mv$diagnosis), 
+                               x_1=c(scaled_cancer_data_mv$texture_se),
+                               x_2=c(scaled_cancer_data_mv$area_se),
+                               x_3=c(scaled_cancer_data_mv$smoothness_se),
+                               x_4=c(scaled_cancer_data_mv$concavity_se),
+                               x_5=c(scaled_cancer_data_mv$symmetry_se),
+                               x_6=c(scaled_cancer_data_mv$fractal_dimension_se))
+multivariate_se_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
+                                              data = multivariate_se_data, refresh=0)
+```
+
+# Multivariate Model - w/ Worst Variables
+```{r}
+multivariate_worst_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
+                               y=c(scaled_cancer_data_mv$diagnosis), 
+                               x_1=c(scaled_cancer_data_mv$texture_worst),
+                               x_2=c(scaled_cancer_data_mv$area_worst),
+                               x_3=c(scaled_cancer_data_mv$smoothness_worst),
+                               x_4=c(scaled_cancer_data_mv$concavity_worst),
+                               x_5=c(scaled_cancer_data_mv$symmetry_worst),
+                               x_6=c(scaled_cancer_data_mv$fractal_dimension_worst))
+multivariate_worst_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
+                                               data = multivariate_worst_data, refresh=0)
+```
+
+# Plot simulated data
+```{r}
+params=extract(multivariate_mean_sampling)
+ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
+
+params=extract(multivariate_se_sampling)
+ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
+
+params=extract(multivariate_worst_sampling)
+ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
