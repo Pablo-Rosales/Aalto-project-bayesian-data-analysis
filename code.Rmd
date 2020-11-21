@@ -222,7 +222,6 @@ abline(a=alpha, b=beta)
 
 # Plot simulated data
 ```{r}
-
 params=extract(linear_sampling_1)
 ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
