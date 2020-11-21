@@ -20,7 +20,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, message=FALSE, warning=FALSE}
 library(rstan) 
 rstan_options(auto_write = TRUE)
-options(mc.cores = 1)
+options(mc.cores = 3)
 library(ggplot2)
 library(aaltobda)
 library(shinystan)
@@ -29,21 +29,13 @@ library(loo)
 library(dlookr)
 library(corrplot)
 library(rstanarm)
+library(projpred)
+library(GGally)
 SEED <- 48927
 ```
 
 # Data
-## Option 1. Heart Disease dataset
-```{r}
-heart_data = read.csv('heartdisease.csv')
-names(heart_data) <- c('age', 'sex', 'chest_pain_type', 'resting_blood_pressure', 'cholesterol', 'fasting_blood_sugar', 'rest_ecg', 'max_heart_rate_achieved',
-       'exercise_induced_angina', 'st_depression', 'st_slope', 'num_major_vessels', 'thalassemia', 'target')
-corrplot(cor(heart_data))
-head(heart_data)
-describe(heart_data)
-```
-
-## Option 2. Breast cancer dataset
+## Breast cancer dataset
 ```{r}
 cancer_data = read.csv('cancer.csv')
 cancer_data[cancer_data == "B"] <- as.numeric(0)
@@ -222,6 +214,7 @@ abline(a=alpha, b=beta)
 
 # Plot simulated data
 ```{r}
+par(mfrow=c(2,2))
 params=extract(linear_sampling_1)
 ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 
@@ -375,6 +368,83 @@ ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
 params=extract(multivariate_worst_sampling)
 ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
 ```
+
+
+```{r}
+beta <- student_t(df = 1, location = 0, scale = 2)
+alpha <- normal(0, 10)
+
+post1 <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
+                  + symmetry_mean + fractal_dimension_mean
+                  + texture_se + area_se + smoothness_se + concavity_se
+                  + symmetry_se + fractal_dimension_se
+                  + texture_worst + area_worst + smoothness_worst + concavity_worst
+                  + symmetry_worst + fractal_dimension_worst,
+                  data = scaled_cancer_data_mv,
+                  family = binomial(link = "logit"), 
+                  prior = beta, prior_intercept = alpha, QR=TRUE,
+                  seed = SEED, refresh=0)
+```
+
+
+
+```{r}
+preds <- posterior_epred(post1)
+pred <- colMeans(preds)
+pr <- as.integer(pred >= 0.5)
+round(mean(xor(pr,as.integer(scaled_cancer_data_mv$diagnosis==0))), 4)
+
+yrep <- posterior_predict(post1, draws = 50)
+ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, yrep)
+
+mcmc_areas(as.matrix(post1))
+```
+
+# EJECUTAR UNA UNICA VEZ PARA CANTIDAD DE VARIABLES POR USAR
+```{r}
+refmodel <- get_refmodel(post1)
+vs <- cv_varsel(refmodel, method = "forward")
+solution_terms(vs)
+plot(vs, stats = c('elpd', 'rmse'))
+```
+
+
+```{r}
+post2 <- stan_glm(diagnosis ~ area_worst + smoothness_worst + concavity_mean,
+                  data = scaled_cancer_data_mv,
+                  family = binomial(link = "logit"), 
+                  prior = beta, prior_intercept = alpha,
+                  seed = SEED, refresh=0)
+
+preds <- posterior_epred(post2)
+pred <- colMeans(preds)
+pr <- as.integer(pred >= 0.5)
+round(mean(xor(pr, as.integer(scaled_cancer_data_mv$diagnosis==0))), 4)
+
+yrep <- posterior_predict(post2, draws = 50)
+ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, yrep)
+
+mcmc_areas(as.matrix(post2))
+```
+
+
+# Model Comparison
+## Full multivariate model
+```{r}
+loo1 <- loo(post1, save_psis = TRUE)
+loo1
+```
+## Multivariate model with 1 or more variables
+```{r}
+loo2 <- loo(post2, save_psis = TRUE)
+loo2
+```
+## Model comparison
+```{r}
+loo_compare(loo1, loo2)
+```
+
+
 
 
 
