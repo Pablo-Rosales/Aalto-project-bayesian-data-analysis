@@ -167,7 +167,6 @@ pareto_k_values <- list()
 for (i in (1:length(linear_models))){
   cat("\n\n- Monitoring variable: ", variables[i], "\n")
   model <- linear_models[[i]]
-  #monitor(model)
   model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
   model_r_eff <- relative_eff(exp(model_log_lik), cores = 2)
   model_loo <- loo(model_log_lik, r_eff = model_r_eff, cores = 2)
@@ -177,95 +176,35 @@ for (i in (1:length(linear_models))){
 ```
 
 ## Linear Model - Predictive Checking
-SEGUIR MIRANDO UNA OPCION PARA ESTO SI NO DEJARLO COMO ABAJO
+Text aqui...
 ```{r}
 y_sims <- list()
 for (model in linear_models){
-  params <- extract(linear_models[[1]])
+  params <- extract(model)
   y_sims <- append(y_sims, list(params$y_sim[1:100,]))
 }
 
-#for (i in y_sims){
-#  ppc_dens_overlay(scaled_cancer_data$diagnosis, i) ## ESTE FORLOOP ES EL QUE NO FUNCIONA
-#}
+ppc1 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
+ppc2 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
+ppc3 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
+ppc4 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]])
+ppc5 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]])
+ppc6 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]])
+ppc7 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[7]])
+ppc8 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[8]])
+ppc9 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[9]])
+ppc10 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[10]])
+ppc11 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[11]])
+ppc12 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[12]])
+ppc13 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[13]])
+ppc14 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[14]])
+ppc15 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[15]])
+ppc16 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
 
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[7]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[8]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[9]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[10]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[11]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[12]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[13]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[14]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[15]])
-ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
-```
-
-Esto de abajo es la misma cosa, pero funciona. El forloop de arriba no va.
-```{r}
-par(mfrow=c(2,2))
-params=extract(linear_sampling_1)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_2)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_3)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_4)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_5)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_6)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_7)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_8)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_9)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_10)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_11)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_12)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_13)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_14)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_15)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-
-params=extract(linear_sampling_16)
-ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
-```
-
-## Plot the model (NO LO PONDRIA EN EL REPORT)
-```{r}
-plot(scaled_cancer_data$texture_mean, scaled_cancer_data$diagnosis)
-params = extract(linear_sampling_1)
-alpha = mean(params$alpha)
-beta = mean(params$beta)
-abline(a=alpha, b=beta)
+bayesplot_grid(ppc1, ppc2, ppc3, ppc4, subtitles = c("texture_mean", "area_mean", "smoothness_mean", "concavity_mean"))
+bayesplot_grid(ppc5, ppc6, ppc7, ppc8, subtitles = c("symmetry_mean", "fractal_dimension_mean", "texture_se", "area_se"))
+bayesplot_grid(ppc9, ppc10, ppc11, ppc12, subtitles = c("smoothness_se", "concavity_se", "symmetry_se", "fractal_dimension_se"))
+bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles = c("smoothness_worst", "concavity_worst", "symmetry_worst", "fractal_dimension_worst"))
 ```
 
 ```{r}
