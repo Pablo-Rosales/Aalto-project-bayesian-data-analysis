@@ -31,25 +31,56 @@ library(corrplot)
 library(rstanarm)
 library(projpred)
 library(GGally)
+library(shiny)
 SEED <- 48927
 ```
 
 # Data
 ## Breast cancer dataset
+Mini introduccion
 ```{r}
 cancer_data = read.csv('cancer.csv')
-cancer_data[cancer_data == "B"] <- as.numeric(0)
-cancer_data[cancer_data == "M"] <- as.numeric(1)
-cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
-corrplot(cor(cancer_data[,2:32]))
-describe(cancer_data[,2:32])
-head(cancer_data[,2:32])
+head(cancer_data)
+```
+
+
+Additionally, the data used has a total of 33 features (including the diagnosis, in this case, our target), and 569 samples for each of the features.
+```{r}
 print(nrow(cancer_data))
+print(ncol(cancer_data))
 ```
 
 # Preprocessing
+
+## Initial checkup
+The dataset has a column comprised of only NULL/NA values, so it will be dropped.
+```{r}
+any(is.na(cancer_data))
+sum(is.na(cancer_data))
+
+head(cancer_data[,33])
+cancer_data$X <- NULL
+
+any(is.na(cancer_data))
+sum(is.na(cancer_data))
+```
+
+## Initial cleaning up
+Como los datos estan presentados no se como, se limpia inicialmente de esta forma
+```{r}
+cancer_data[cancer_data == "B"] <- as.numeric(0)
+cancer_data[cancer_data == "M"] <- as.numeric(1)
+cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
+
+corrplot(cor(cancer_data[,2:32]))
+describe(cancer_data)
+head(cancer_data)
+```
+
 ## Feature selection
-For this task, we reduce the number of input variables in order to develop our models. As seen in the correlation map, variables such as **radius_mean**, **perimeter_mean** and **area_mean** are highly correlated. Thus, we discard the variables **radius_mean**, **perimeter_mean**. Etc...
+For this task, we reduce the number of input variables in order to develop our models. As seen in the correlation map, variables such as **radius_mean**, **perimeter_mean** and **area_mean** are highly correlated. Thus, we discard the variables **radius_mean**, **perimeter_mean**, etc...
+
+Additionally, we save a "checkpoint" of the cancer_data into cancer_data_mv, which will be used for the multivariate approach, so as to have one multivariate model that uses 6 variables...
 ```{r}
 cancer_data$radius_mean <- NULL
 cancer_data$perimeter_mean <- NULL
@@ -63,26 +94,21 @@ cancer_data$radius_worst <- NULL
 cancer_data$perimeter_worst <- NULL
 cancer_data$compactness_worst <- NULL
 cancer_data$concave.points_worst <- NULL
-cancer_data$X <- NULL
 
 cancer_data_mv <- cancer_data
 cancer_data$area_worst <- NULL
 cancer_data$texture_worst <- NULL
 ```
 
-### Selected variables
+## Selected variables
+The final variables, along with the correlation, used for our models are as follows:
 ```{r}
-head(cancer_data)
 corrplot(cor(cancer_data))
 corrplot(cor(cancer_data_mv))
-#hist(cancer_data$texture_mean)
-#hist(cancer_data$area_mean)
-#hist(cancer_data$smoothness_mean)
-#hist(cancer_data$symmetry_mean)
-#hist(cancer_data$texture_se)
 ```
 
 ## Scaling
+The data has been scaled before being passed to the models.
 ```{r}
 scaled_cancer_data <- cancer_data
 col_names <- colnames(cancer_data)
@@ -102,117 +128,86 @@ head(scaled_cancer_data_mv)
 
 # Linear Model
 ```{r}
-linear_model_normal <- rstan::stan_model(file = "models/linear_model_normal.stan")
-linear_model_bernoulli <- rstan::stan_model(file = "models/linear_model_bernoulli.stan")
-linear_model <- linear_model_bernoulli
+writeLines(readLines("models/linear_model_bernoulli.stan"))
+
+linear_model <- rstan::stan_model(file = "models/linear_model_bernoulli.stan")
 ```
 
-# Linear Model - texture_mean
+## Linear Model - Sensitivity Analysis
+
 ```{r}
-linear_data_1 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$texture_mean))
-linear_sampling_1 <- rstan::sampling(linear_model, data = linear_data_1, refresh=0)
+print("sensitivity analysis here")
 ```
 
-# Linear Model - area_mean
+## Linear Model - Evaluation
+
 ```{r}
-linear_data_2 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$area_mean))
-linear_sampling_2 <- rstan::sampling(linear_model, data = linear_data_2, refresh=0)
-```
+variables <- c("texture_mean", "area_mean", "smoothness_mean", "concavity_mean",
+               "symmetry_mean", "fractal_dimension_mean", "texture_se",
+               "area_se", "smoothness_se", "concavity_se", "symmetry_se",
+               "fractal_dimension_se", "smoothness_worst", "concavity_worst", 
+               "symmetry_worst", "fractal_dimension_worst")
 
-# Linear Model - smoothness_mean
+linear_models <- c()
+N <- length(scaled_cancer_data$diagnosis)
+y <- c(scaled_cancer_data$diagnosis)
+
+for (variable in variables){
+  cat("Sampling with variable: ", variable, "\n")
+  linear_model_data <- list(N=N, y=y, x=c(scaled_cancer_data[,variable]))
+  linear_sampling <- rstan::sampling(linear_model, data = linear_model_data, refresh=0)
+  linear_models <- c(linear_models, linear_sampling)
+}
+
+```
+## Linear Model - Diagnostics
 ```{r}
-linear_data_3 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$smoothness_mean))
-linear_sampling_3 <- rstan::sampling(linear_model, data = linear_data_3, refresh=0)
+pareto_k_values <- list()
+
+for (i in (1:length(linear_models))){
+  cat("\n\n- Monitoring variable: ", variables[i], "\n")
+  model <- linear_models[[i]]
+  #monitor(model)
+  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik), cores = 2)
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff, cores = 2)
+  print(model_loo)
+  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+}
 ```
 
-# Linear Model - concavity_mean
+## Linear Model - Predictive Checking
+SEGUIR MIRANDO UNA OPCION PARA ESTO SI NO DEJARLO COMO ABAJO
 ```{r}
-linear_data_4 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$concavity_mean))
-linear_sampling_4 <- rstan::sampling(linear_model, data = linear_data_4, refresh=0)
+y_sims <- list()
+for (model in linear_models){
+  params <- extract(linear_models[[1]])
+  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
+}
+
+#for (i in y_sims){
+#  ppc_dens_overlay(scaled_cancer_data$diagnosis, i) ## ESTE FORLOOP ES EL QUE NO FUNCIONA
+#}
+
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[7]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[8]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[9]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[10]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[11]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[12]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[13]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[14]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[15]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
 ```
 
-# Linear Model - symmetry_mean
-```{r}
-linear_data_5 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$symmetry_mean))
-linear_sampling_5 <- rstan::sampling(linear_model, data = linear_data_5, refresh=0)
-```
-
-# Linear Model - fractal_dimension_mean
-```{r}
-linear_data_6 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$fractal_dimension_mean))
-linear_sampling_6 <- rstan::sampling(linear_model, data = linear_data_6, refresh=0)
-```
-
-# Linear Model - texture_se
-```{r}
-linear_data_7 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$texture_se))
-linear_sampling_7 <- rstan::sampling(linear_model, data = linear_data_7, refresh=0)
-```
-
-# Linear Model - area_se
-```{r}
-linear_data_8 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$area_se))
-linear_sampling_8 <- rstan::sampling(linear_model, data = linear_data_8, refresh=0)
-```
-
-# Linear Model - smoothness_se
-```{r}
-linear_data_9 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$smoothness_se))
-linear_sampling_9 <- rstan::sampling(linear_model, data = linear_data_9, refresh=0)
-```
-
-# Linear Model - concavity_se
-```{r}
-linear_data_10 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$concavity_se))
-linear_sampling_10 <- rstan::sampling(linear_model, data = linear_data_10, refresh=0)
-```
-
-# Linear Model - symmetry_se
-```{r}
-linear_data_11 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$symmetry_se))
-linear_sampling_11 <- rstan::sampling(linear_model, data = linear_data_11, refresh=0)
-```
-
-# Linear Model - fractal_dimension_se
-```{r}
-linear_data_12 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$fractal_dimension_se))
-linear_sampling_12 <- rstan::sampling(linear_model, data = linear_data_12, refresh=0)
-```
-
-# Linear Model - fractal_dimension_se
-```{r}
-linear_data_13 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$fractal_dimension_se))
-linear_sampling_13 <- rstan::sampling(linear_model, data = linear_data_13, refresh=0)
-```
-
-# Linear Model - fractal_dimension_se
-```{r}
-linear_data_14 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$fractal_dimension_se))
-linear_sampling_14 <- rstan::sampling(linear_model, data = linear_data_14, refresh=0)
-```
-
-# Linear Model - fractal_dimension_se
-```{r}
-linear_data_15 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$fractal_dimension_se))
-linear_sampling_15 <- rstan::sampling(linear_model, data = linear_data_15, refresh=0)
-```
-
-# Linear Model - fractal_dimension_se
-```{r}
-linear_data_16 <- list(N=length(scaled_cancer_data$diagnosis), y=c(scaled_cancer_data$diagnosis), x=c(scaled_cancer_data$fractal_dimension_se))
-linear_sampling_16 <- rstan::sampling(linear_model, data = linear_data_16, refresh=0)
-```
-
-# Plot the model
-```{r}
-plot(scaled_cancer_data$texture_mean, scaled_cancer_data$diagnosis)
-params = extract(linear_sampling_1)
-alpha = mean(params$alpha)
-beta = mean(params$beta)
-abline(a=alpha, b=beta)
-```
-
-# Plot simulated data
+Esto de abajo es la misma cosa, pero funciona. El forloop de arriba no va.
 ```{r}
 par(mfrow=c(2,2))
 params=extract(linear_sampling_1)
@@ -264,18 +259,20 @@ params=extract(linear_sampling_16)
 ppc_dens_overlay(scaled_cancer_data$diagnosis, params$y_sim[1:100,])
 ```
 
-
+## Plot the model (NO LO PONDRIA EN EL REPORT)
 ```{r}
-monitor(linear_sampling_1)
-model_log_lik <- extract_log_lik(linear_sampling_1, parameter_name = "log_lik", merge_chains = FALSE)
-model_r_eff <- relative_eff(exp(model_log_lik), cores = 2)
-model_loo <- loo(model_log_lik, r_eff = model_r_eff, cores = 2)
-pooled_k_values <- model_loo$diagnostics$pareto_k
+plot(scaled_cancer_data$texture_mean, scaled_cancer_data$diagnosis)
+params = extract(linear_sampling_1)
+alpha = mean(params$alpha)
+beta = mean(params$beta)
+abline(a=alpha, b=beta)
 ```
 
 ```{r}
-print(model_loo)
-hist(pooled_k_values)
+par(mfrow=c(2,2))
+for (i in pareto_k_values){
+  hist(i)
+}
 ```
 
 
@@ -283,39 +280,38 @@ hist(pooled_k_values)
 ## $\hat{R}
 $\hat{R}$ can be used to monitor if a group of chains has converged to the target distribution. This can be done by comparing the between and within-chain estimate for model parameters. If chains have not converged, meaning that they have not mixed well, $\hat{R}$ will be greater than one. If chains have converged, the $\hat{R}$ value will be virtually one.
 
-As seen in the `monitor` outputs, all $\hat{R}$ values were 1 or close to 1. (Por concluir)
+As seen in the `Appendix A` `monitor` outputs, all $\hat{R}$ values were 1 or close to 1, which means that the Linear Model chains have converged.
 
 ## ESS
 We would like to have a diagnostic that tell us when the weights are problematic, as we could have vastly imbalanced weights. In this case, we could use **effective sample size ($S_{eff}$)**, a quantitative measure of efficiency in **importance sampling**. $S_{eff}$ represents the number of independent samples required to obtain an importance sampling estimate with about the same efficiency as if we would have used all the samples.
 
-`monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good). As seen in the `monitor` outputs, our ESS values are way higher than 100, which established that our values are good. (Aún no está claro que esto sea válido, preguntar a TA)
+As seen in `Appendix A`, the `monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good). Additionally, our ESS values are way higher than 100, which established that our values are good.
 
 ## Divergences
 
 A divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value [...]. Habrá que indicar si hemos obtenido divergencias o no en los modelos más adelante con la siguiente función:
 
 ```{r}
-check_hmc_diagnostics(linear_sampling_1)
+for (i in (1:length(linear_models))){
+  cat("\n\n- Checking divergence for variable: ", variables[i], "\n")
+  check_hmc_diagnostics(linear_models[[i]])
+}
 ```
 
 As seen in the obtained results, we obtained 0 divergences... etc
 
-# Model comparison
-
-# Sensitivity analysis
-
-
-
-
-
+## Model comparison
+PREGUNTAR A ALGUN TA CUANTO ANTES
 
 
 # Multivariate Model
 ```{r}
+writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
+
 linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
 ```
 
-# Multivariate Model - w/ Mean Variables
+## Multivariate Model - w/ Mean Variables
 ```{r}
 multivariate_mean_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
                                y=c(scaled_cancer_data_mv$diagnosis), 
@@ -329,7 +325,7 @@ multivariate_mean_sampling <- rstan::sampling(linear_model_bernoulli_multivariat
                                               data = multivariate_mean_data, refresh=0)
 ```
 
-# Multivariate Model - w/ SE Variables
+## Multivariate Model - w/ SE Variables
 ```{r}
 multivariate_se_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
                                y=c(scaled_cancer_data_mv$diagnosis), 
@@ -343,7 +339,7 @@ multivariate_se_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
                                               data = multivariate_se_data, refresh=0)
 ```
 
-# Multivariate Model - w/ Worst Variables
+## Multivariate Model - w/ Worst Variables
 ```{r}
 multivariate_worst_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
                                y=c(scaled_cancer_data_mv$diagnosis), 
@@ -453,10 +449,14 @@ loo_compare(loo1, loo2)
 
 
 
+# Appendices
+## Apendix A - Linear Model monitors
 
-
-
-
+```{r}
+for (model in linear_models){
+  monitor(model)
+}
+```
 
 
 
