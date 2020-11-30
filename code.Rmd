@@ -32,6 +32,7 @@ library(rstanarm)
 library(projpred)
 library(GGally)
 library(shiny)
+library(gridExtra)
 SEED <- 48927
 ```
 
@@ -80,7 +81,6 @@ head(cancer_data)
 ## Feature selection
 For this task, we reduce the number of input variables in order to develop our models. As seen in the correlation map, variables such as **radius_mean**, **perimeter_mean** and **area_mean** are highly correlated. Thus, we discard the variables **radius_mean**, **perimeter_mean**, etc...
 
-Additionally, we save a "checkpoint" of the cancer_data into cancer_data_mv, which will be used for the multivariate approach, so as to have one multivariate model that uses 6 variables...
 ```{r}
 cancer_data$radius_mean <- NULL
 cancer_data$perimeter_mean <- NULL
@@ -94,17 +94,12 @@ cancer_data$radius_worst <- NULL
 cancer_data$perimeter_worst <- NULL
 cancer_data$compactness_worst <- NULL
 cancer_data$concave.points_worst <- NULL
-
-cancer_data_mv <- cancer_data
-cancer_data$area_worst <- NULL
-cancer_data$texture_worst <- NULL
 ```
 
 ## Selected variables
 The final variables, along with the correlation, used for our models are as follows:
 ```{r}
 corrplot(cor(cancer_data))
-corrplot(cor(cancer_data_mv))
 ```
 
 ## Scaling
@@ -112,18 +107,11 @@ The data has been scaled before being passed to the models.
 ```{r}
 scaled_cancer_data <- cancer_data
 col_names <- colnames(cancer_data)
-scaled_cancer_data_mv <- cancer_data_mv
-col_names_mv <- colnames(cancer_data_mv)
 
 scaled_cancer_data[,1:2] <- cancer_data[,1:2]
 scaled_cancer_data[,3:18] <- scale(cancer_data[,3:18])
 colnames(scaled_cancer_data) <- col_names
 head(scaled_cancer_data)
-
-scaled_cancer_data_mv[,1:2] <- cancer_data_mv[,1:2]
-scaled_cancer_data_mv[,3:20] <- scale(cancer_data_mv[,3:20])
-colnames(scaled_cancer_data_mv) <- col_names_mv
-head(scaled_cancer_data_mv)
 ```
 
 # Linear Model
@@ -145,8 +133,9 @@ print("sensitivity analysis here")
 variables <- c("texture_mean", "area_mean", "smoothness_mean", "concavity_mean",
                "symmetry_mean", "fractal_dimension_mean", "texture_se",
                "area_se", "smoothness_se", "concavity_se", "symmetry_se",
-               "fractal_dimension_se", "smoothness_worst", "concavity_worst", 
-               "symmetry_worst", "fractal_dimension_worst")
+               "fractal_dimension_se", "texture_worst", "area_worst", 
+               "smoothness_worst", "concavity_worst", "symmetry_worst", 
+               "fractal_dimension_worst")
 
 linear_models <- c()
 N <- length(scaled_cancer_data$diagnosis)
@@ -155,24 +144,35 @@ y <- c(scaled_cancer_data$diagnosis)
 for (variable in variables){
   cat("Sampling with variable: ", variable, "\n")
   linear_model_data <- list(N=N, y=y, x=c(scaled_cancer_data[,variable]))
-  linear_sampling <- rstan::sampling(linear_model, data = linear_model_data, refresh=0)
+  linear_sampling <- rstan::sampling(linear_model, data = linear_model_data,
+                                     seed = SEED, refresh=0)
   linear_models <- c(linear_models, linear_sampling)
 }
 
 ```
-## Linear Model - Diagnostics
+
+## Linear Model - Diagnostics and Comparisons
+Using Leave-One-Out Cross Validation, we obtain the PSIS-LOO estimates for each of the variables for the Linear Model for posterior model comparison.
+
+For the Linear Model itself, most of the models have exceptional k-values (lower than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `area_worst`, `area_mean`, `area_se`, `concavity_mean`.
 ```{r}
 pareto_k_values <- list()
+linear_loo_estimates_df <- data.frame()
 
 for (i in (1:length(linear_models))){
-  cat("\n\n- Monitoring variable: ", variables[i], "\n")
+  cat("- Monitoring variable: ", variables[i], "\n")
   model <- linear_models[[i]]
   model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
   model_r_eff <- relative_eff(exp(model_log_lik), cores = 2)
   model_loo <- loo(model_log_lik, r_eff = model_r_eff, cores = 2)
-  print(model_loo)
   pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  
+  aux_df <- data.frame("variable" = variables[i], "elpd_loo" = model_loo$estimates[1], "p_loo" = model_loo$estimates[2])
+  linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
 }
+
+cat("-- Linear Model Comparison")
+print(linear_loo_estimates_df)
 ```
 
 ## Linear Model - Predictive Checking
@@ -200,18 +200,31 @@ ppc13 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[13]])
 ppc14 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[14]])
 ppc15 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[15]])
 ppc16 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
+ppc17 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[17]])
+ppc18 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[18]])
 
 bayesplot_grid(ppc1, ppc2, ppc3, ppc4, subtitles = c("texture_mean", "area_mean", "smoothness_mean", "concavity_mean"))
 bayesplot_grid(ppc5, ppc6, ppc7, ppc8, subtitles = c("symmetry_mean", "fractal_dimension_mean", "texture_se", "area_se"))
 bayesplot_grid(ppc9, ppc10, ppc11, ppc12, subtitles = c("smoothness_se", "concavity_se", "symmetry_se", "fractal_dimension_se"))
-bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles = c("smoothness_worst", "concavity_worst", "symmetry_worst", "fractal_dimension_worst"))
+bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles = c("smoothness_worst", "concavity_worst", "smoothness_worst", "concavity_worst"))
+bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst", "fractal_dimension_worst"))
 ```
 
 ```{r}
-par(mfrow=c(2,2))
-for (i in pareto_k_values){
-  hist(i)
+p <- list()
+for (i in 1:length(pareto_k_values)){
+  df <- data.frame(pareto_k_values[[i]])
+  colnames(df) <- c("values")
+  p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) + 
+    geom_point(color="#10A5F5") + 
+    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") + 
+    ggtitle(variables[i]) +  xlab("Samples") + ylab("K-values")
 }
+do.call(grid.arrange, c(p[1:4], ncol=2))
+do.call(grid.arrange, c(p[5:8], ncol=2))
+do.call(grid.arrange, c(p[9:12], ncol=2))
+do.call(grid.arrange, c(p[13:16], ncol=2))
+do.call(grid.arrange, c(p[17:18], ncol=2))
 ```
 
 
@@ -239,105 +252,157 @@ for (i in (1:length(linear_models))){
 
 As seen in the obtained results, we obtained 0 divergences... etc
 
-## Model comparison
-PREGUNTAR A ALGUN TA CUANTO ANTES
-
-
 # Multivariate Model
 ```{r}
+
+model_accuracies <- function(model){
+  y_pred <- posterior_epred(model)
+  preds <- colMeans(y_pred)
+  
+  # Class Negative Accuracy
+  pr <- as.integer(preds >= 0.5)
+  acc_zero <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
+  
+  # Class Positive Accuracy
+  pr <- as.integer(preds < 0.5)
+  acc_one <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==1))), 4)
+  
+  return (c(acc_zero, acc_one))
+}
+
 writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
+
+beta <- student_t(df = 1, location = 0, scale = 2)
+alpha <- normal(0, 10)
 
 linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
 ```
 
 ## Multivariate Model - w/ Mean Variables
+
 ```{r}
-multivariate_mean_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
-                               y=c(scaled_cancer_data_mv$diagnosis), 
-                               x_1=c(scaled_cancer_data_mv$texture_mean),
-                               x_2=c(scaled_cancer_data_mv$area_mean),
-                               x_3=c(scaled_cancer_data_mv$smoothness_mean),
-                               x_4=c(scaled_cancer_data_mv$concavity_mean),
-                               x_5=c(scaled_cancer_data_mv$symmetry_mean),
-                               x_6=c(scaled_cancer_data_mv$fractal_dimension_mean))
-multivariate_mean_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
-                                              data = multivariate_mean_data, refresh=0)
+
+mv_mean_block <- list("texture_mean", "area_mean", "smoothness_mean",
+                      "concavity_mean", "symmetry_mean", "fractal_dimension_mean")
+mv_se_block <- list("texture_se", "area_se", "smoothness_se", "concavity_se",
+                       "symmetry_se", "fractal_dimension_se")
+mv_worst_block <- list("texture_worst", "area_worst", "smoothness_worst",
+                       "concavity_worst", "symmetry_worst", "fractal_dimension_worst")
+mv_var_block <- list(mv_mean_block, mv_se_block, mv_worst_block)
+
+multivariate_models <- c()
+multivariate_glms <- list()
+
+for (i in (1:3)){
+  var_block <- mv_var_block[[i]]
+  print(paste("diagnosis ~", paste(var_block, collapse = "+")))
+  multivariate_block_data <- list(N=length(scaled_cancer_data$diagnosis), 
+                               y=c(scaled_cancer_data$diagnosis), 
+                               x_1=scaled_cancer_data[,var_block[[1]]],
+                               x_2=scaled_cancer_data[,var_block[[2]]],
+                               x_3=scaled_cancer_data[,var_block[[3]]],
+                               x_4=scaled_cancer_data[,var_block[[4]]],
+                               x_5=scaled_cancer_data[,var_block[[5]]],
+                               x_6=scaled_cancer_data[,var_block[[6]]])
+  multivariate_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
+                                           data = multivariate_block_data,
+                                           seed = SEED, refresh=0)
+  multivariate_models <- c(multivariate_models, multivariate_sampling)
+  
+  multivariate_glm <- stan_glm(paste("diagnosis ~", paste(var_block, collapse = "+")),
+                               data = scaled_cancer_data,
+                               family = binomial(link = "logit"), 
+                               prior = beta, prior_intercept = alpha, QR=TRUE,
+                               seed = SEED, refresh=0)
+  multivariate_glms <- append(multivariate_glms, list(multivariate_glm))
+}
+
 ```
 
-## Multivariate Model - w/ SE Variables
+## Multivariate Model - Diagnostics and Comparisons
+Worst is best.
 ```{r}
-multivariate_se_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
-                               y=c(scaled_cancer_data_mv$diagnosis), 
-                               x_1=c(scaled_cancer_data_mv$texture_se),
-                               x_2=c(scaled_cancer_data_mv$area_se),
-                               x_3=c(scaled_cancer_data_mv$smoothness_se),
-                               x_4=c(scaled_cancer_data_mv$concavity_se),
-                               x_5=c(scaled_cancer_data_mv$symmetry_se),
-                               x_6=c(scaled_cancer_data_mv$fractal_dimension_se))
-multivariate_se_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
-                                              data = multivariate_se_data, refresh=0)
-```
+pareto_k_values <- list()
+multivariate_loo_estimates_df <- data.frame()
+mv_model_names <- c("mean", "se", "worst")
 
-## Multivariate Model - w/ Worst Variables
-```{r}
-multivariate_worst_data <- list(N=length(scaled_cancer_data_mv$diagnosis), 
-                               y=c(scaled_cancer_data_mv$diagnosis), 
-                               x_1=c(scaled_cancer_data_mv$texture_worst),
-                               x_2=c(scaled_cancer_data_mv$area_worst),
-                               x_3=c(scaled_cancer_data_mv$smoothness_worst),
-                               x_4=c(scaled_cancer_data_mv$concavity_worst),
-                               x_5=c(scaled_cancer_data_mv$symmetry_worst),
-                               x_6=c(scaled_cancer_data_mv$fractal_dimension_worst))
-multivariate_worst_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
-                                               data = multivariate_worst_data, refresh=0)
+for (i in (1:length(multivariate_models))){
+  cat("- Monitoring variable group: ", mv_model_names[i], "\n")
+  model <- multivariate_models[[i]]
+  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  
+  accs <- model_accuracies(model = multivariate_glms[[i]])
+  
+  aux_df <- data.frame("variable group" = mv_model_names[i], 
+                       "elpd_loo" = model_loo$estimates[1], 
+                       "p_loo" = model_loo$estimates[2],
+                       "pred. negative" = accs[1],
+                       "pred. positive" = accs[2])
+  
+  multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
+}
+
+cat("-- Linear Model Comparison")
+print(multivariate_loo_estimates_df)
 ```
 
 # Plot simulated data
 ```{r}
-params=extract(multivariate_mean_sampling)
-ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
+y_sims <- list()
+for (model in multivariate_models){
+  params <- extract(model)
+  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
+}
 
-params=extract(multivariate_se_sampling)
-ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
-
-params=extract(multivariate_worst_sampling)
-ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, params$y_sim[1:220,])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
+ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
 ```
 
 
 ```{r}
-beta <- student_t(df = 1, location = 0, scale = 2)
-alpha <- normal(0, 10)
-
-post1 <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
-                  + symmetry_mean + fractal_dimension_mean
-                  + texture_se + area_se + smoothness_se + concavity_se
-                  + symmetry_se + fractal_dimension_se
-                  + texture_worst + area_worst + smoothness_worst + concavity_worst
-                  + symmetry_worst + fractal_dimension_worst,
-                  data = scaled_cancer_data_mv,
-                  family = binomial(link = "logit"), 
-                  prior = beta, prior_intercept = alpha, QR=TRUE,
-                  seed = SEED, refresh=0)
+multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
+                              + symmetry_mean + fractal_dimension_mean
+                              + texture_se + area_se + smoothness_se + concavity_se
+                              + symmetry_se + fractal_dimension_se
+                              + texture_worst + area_worst + smoothness_worst + concavity_worst
+                              + symmetry_worst + fractal_dimension_worst,
+                              data = scaled_cancer_data,
+                              family = binomial(link = "logit"), 
+                              prior = beta, prior_intercept = alpha, QR=TRUE,
+                              seed = SEED, refresh=0)
 ```
 
 
 
 ```{r}
-preds <- posterior_epred(post1)
-pred <- colMeans(preds)
-pr <- as.integer(pred >= 0.5)
-round(mean(xor(pr,as.integer(scaled_cancer_data_mv$diagnosis==0))), 4)
+accs <- model_accuracies(model = multivariate_full)
 
-yrep <- posterior_predict(post1, draws = 50)
-ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, yrep)
+model_log_lik <- log_lik(multivariate_full)
+model_loo <- loo(model_log_lik)
+pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
 
-mcmc_areas(as.matrix(post1))
+aux_df <- data.frame("variable group" = "full model",
+                     "elpd_loo" = model_loo$estimates[1],
+                     "p_loo" = model_loo$estimates[2],
+                     "pred. negative" = accs[1],
+                     "pred. positive" = accs[2])
+multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
+
+yrep <- posterior_predict(multivariate_full, draws = 50)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, yrep)
+
+mcmc_areas(as.matrix(multivariate_full))
+
+print(multivariate_loo_estimates_df)
 ```
 
 # EJECUTAR UNA UNICA VEZ PARA CANTIDAD DE VARIABLES POR USAR
 ```{r}
-refmodel <- get_refmodel(post1)
+refmodel <- get_refmodel(multivariate_full)
 vs <- cv_varsel(refmodel, method = "forward")
 solution_terms(vs)
 plot(vs, stats = c('elpd', 'rmse'))
@@ -345,21 +410,36 @@ plot(vs, stats = c('elpd', 'rmse'))
 
 
 ```{r}
-post2 <- stan_glm(diagnosis ~ area_worst + smoothness_worst + concavity_mean,
-                  data = scaled_cancer_data_mv,
-                  family = binomial(link = "logit"), 
-                  prior = beta, prior_intercept = alpha,
-                  seed = SEED, refresh=0)
+#area_worst, area_mean, area_se, concavity_mean.
 
-preds <- posterior_epred(post2)
-pred <- colMeans(preds)
-pr <- as.integer(pred >= 0.5)
-round(mean(xor(pr, as.integer(scaled_cancer_data_mv$diagnosis==0))), 4)
+multivariate_three <- stan_glm(diagnosis ~ area_worst + concavity_worst + texture_worstre_worst,
+                               data = scaled_cancer_data,
+                               family = binomial(link = "logit"), 
+                               prior = beta, prior_intercept = alpha,
+                               seed = SEED, refresh=0)
 
-yrep <- posterior_predict(post2, draws = 50)
-ppc_dens_overlay(scaled_cancer_data_mv$diagnosis, yrep)
+accs <- model_accuracies(model = multivariate_full)
 
-mcmc_areas(as.matrix(post2))
+model_log_lik <- log_lik(multivariate_three)
+model_loo <- loo(model_log_lik)
+pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+
+aux_df <- data.frame("variable group" = "three vars",
+                     "elpd_loo" = model_loo$estimates[1],
+                     "p_loo" = model_loo$estimates[2],
+                     "pred. negative" = accs[1],
+                     "pred. positive" = accs[2])
+multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
+
+yrep <- posterior_predict(multivariate_full, draws = 50)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, yrep)
+
+yrep <- posterior_predict(multivariate_three, draws = 50)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, yrep)
+
+mcmc_areas(as.matrix(multivariate_three))
+
+print(multivariate_loo_estimates_df)
 ```
 
 

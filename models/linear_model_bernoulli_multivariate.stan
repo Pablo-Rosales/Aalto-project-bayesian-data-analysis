@@ -29,12 +29,15 @@ model {
                       + beta_4*x_4 + beta_5*x_5 + beta_6*x_6); //bernoulli_logit for binary outcome
 }
 generated quantities{
-  //vector[N] log_lik;
+  vector[N] log_lik;
   int<lower=0,upper=1> y_sim[N]; //simulated data from posterior
   
   for (i in 1:N){
-    //log_lik[i] = bernoulli_logit_lpmf(y[i] | alpha + beta * x[i]);
-    y_sim[i] = bernoulli_logit_rng(alpha + beta_1*x_1[i] + beta_2*x_2[i] + beta_3*x_3[i]
-                                   + beta_4*x_4[i] + beta_5*x_5[i] + beta_6*x_6[i]);
+    log_lik[i] = bernoulli_logit_lpmf(y[i] | alpha + beta_1*x_1[i] + beta_2*x_2[i] 
+                                            + beta_3*x_3[i] + beta_4*x_4[i]
+                                            + beta_5*x_5[i] + beta_6*x_6[i]);
+    y_sim[i] = bernoulli_logit_rng(alpha + beta_1*x_1[i] + beta_2*x_2[i]
+                                    + beta_3*x_3[i] + beta_4*x_4[i]
+                                    + beta_5*x_5[i] + beta_6*x_6[i]);
   }
 }
