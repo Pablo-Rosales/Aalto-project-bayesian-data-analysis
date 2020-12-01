@@ -272,8 +272,9 @@ model_accuracies <- function(model){
 
 writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
 
-beta <- student_t(df = 1, location = 0, scale = 2)
-alpha <- normal(0, 10)
+#beta <- student_t(df = 1, location = 0, scale = 2)
+beta <- normal(0, 100)
+alpha <- normal(0, 100)
 
 linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
 ```
@@ -412,13 +413,13 @@ plot(vs, stats = c('elpd', 'rmse'))
 ```{r}
 #area_worst, area_mean, area_se, concavity_mean.
 
-multivariate_three <- stan_glm(diagnosis ~ area_worst + concavity_worst + texture_worstre_worst,
+multivariate_three <- stan_glm(diagnosis ~ area_worst + smoothness_worst + texture_mean,
                                data = scaled_cancer_data,
                                family = binomial(link = "logit"), 
                                prior = beta, prior_intercept = alpha,
                                seed = SEED, refresh=0)
 
-accs <- model_accuracies(model = multivariate_full)
+accs <- model_accuracies(model = multivariate_three)
 
 model_log_lik <- log_lik(multivariate_three)
 model_loo <- loo(model_log_lik)
