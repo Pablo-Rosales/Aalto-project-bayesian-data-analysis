@@ -258,7 +258,8 @@ As seen in the obtained results, we obtained 0 divergences... etc
 model_accuracies <- function(model){
   y_pred <- posterior_epred(model)
   preds <- colMeans(y_pred)
-  
+  prueba <- predict(model, newdata=scaled_cancer_data, type='response')
+  print(length(prueba))
   # Class Negative Accuracy
   pr <- as.integer(preds >= 0.5)
   acc_zero <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
@@ -266,7 +267,9 @@ model_accuracies <- function(model){
   # Class Positive Accuracy
   pr <- as.integer(preds < 0.5)
   acc_one <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==1))), 4)
-  
+  print(length(y_pred))
+  print(length(scaled_cancer_data$diagnosis))
+  print(confusionMatrix(factor(round(prueba)),factor(scaled_cancer_data$diagnosis)))
   return (c(acc_zero, acc_one))
 }
 
@@ -326,7 +329,10 @@ Worst is best.
 pareto_k_values <- list()
 multivariate_loo_estimates_df <- data.frame()
 mv_model_names <- c("mean", "se", "worst")
-
+#install.packages("caret")
+library(caret)
+library(e1071)
+library(pROC)
 for (i in (1:length(multivariate_models))){
   cat("- Monitoring variable group: ", mv_model_names[i], "\n")
   model <- multivariate_models[[i]]
@@ -345,7 +351,7 @@ for (i in (1:length(multivariate_models))){
   
   multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
 }
-
+# Escribir sobre esto: https://boostedml.com/2019/05/classification-accuracy-in-r-difference-between-accuracy-precision-recall-sensitivity-and-specificity.html#Classification_Categories_and_the_Confusion_Matrix
 cat("-- Linear Model Comparison")
 print(multivariate_loo_estimates_df)
 ```
