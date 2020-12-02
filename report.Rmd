@@ -2,12 +2,44 @@
 title: "Project BDA"
 author: "Anonymous"
 date: "11/14/2020"
-output: html_document
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    toc: yes
+    toc_depth: '1'
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+# Loaded packages
+
+```{r, message=FALSE, warning=FALSE}
+library(rstan) 
+rstan_options(auto_write = TRUE)
+options(mc.cores = 3)
+library(ggplot2)
+library(aaltobda)
+library(shinystan)
+library(bayesplot)
+library(loo)
+library(dlookr)
+library(corrplot)
+library(rstanarm)
+library(projpred)
+library(GGally)
+library(shiny)
+library(gridExtra)
+library(caret)
+library(e1071)
+library(pROC)
+SEED <- 48927
+```
+
 
 
 # Introduction
@@ -18,7 +50,7 @@ One such method of detecting the dangerousness of the mass is Fine-needle Aspira
 
 The problem presented in this report deals with finding out which features of a FNA are more relevant in diagnosing a patient's mammary lump as benign or malignant. The data used is the [Breast Cancer Wisconsin (Diagnostic) Data Set](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29), a data set whose features are computed from digitized images of FNAs of breast mass.
 
-## Exploratory Data Analysis
+# Exploratory Data Analysis
 
 The breast cancer dataset consists of 569 FNA procedures each with 32 features. Ten real-valued features are computed for each cell nucleus:
 
@@ -41,24 +73,133 @@ head(cancer_data)
 ```
 
 ```{r}
-cat("Number of rows (samples) = ", nrow(cancer_data))
-cat("\nNumber of columns (features) = ", ncol(cancer_data))
+nrows <- nrow(cancer_data)
+ncols <- ncol(cancer_data)
+cat("Breast cancer dataset size:", nrows, "rows x", ncols, "cols")
 ```
 
-As an addendum when talking about the amount of features the dataset has, it can be noticed that instead of the 32 features mentioned, there are really 33 columns, this is because the last column, called 'X', is a pointless column present filled with 'N/A' values. This column will be dropped later on.
+As an addendum when talking about the amount of features the dataset has, it can be noticed that instead of the 32 features mentioned, there are really 33 columns, this is because the last column, called 'X', is a pointless column present filled with 'N/A' values. This column will be dropped.
+
+```{r}
+cancer_data$X <- NULL
+cat("Dataset contains NULL values:", any(is.na(cancer_data)), '\n')
+```
+
+In order to present our data into an numeric format, we convert the target output into binary values (B into '0' and M into '1')
+
+```{r}
+cancer_data[cancer_data == "B"] <- as.numeric(0)
+cancer_data[cancer_data == "M"] <- as.numeric(1)
+cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
+```
+
+Is our data balanced? We would like to know more about how many benign and malignant tumors are contained in our dataset by visualizing a barplot.
+
+```{r}
+ggplot(cancer_data, aes(factor(diagnosis), fill=as.factor(diagnosis))) +
+      geom_bar() + theme(legend.position="none") + xlab("Diagnosis") +
+      ggtitle("Benign and malignant tumor")
+```
+
+A correlation matrix is visualized to obtain correlation coefficients between variables.
+
+```{r}
+corrplot(cor(cancer_data[,2:32]))
+```
+
+As seen in the correlation matrix, there are some variables that are *highly* correlated. Since they do not provide any new information, we could apply feature selection. For instance, `radius_mean`, `perimeter_mean` and `area_mean` are highly correlated, so we decide to keep `area_mean` in our dataset. Moreover, `compactness_mean`, `concavity_mean` and `concave.points_mean` are correlated, so we decide to keep `concavity_mean`. This process is also carried out for the standard deviation and worst related variables.
+
+```{r}
+# Dropping columns using the subset function. '-' indicates dropping vars. 
+cancer_data = subset(cancer_data, select = -c(radius_mean, perimeter_mean, 
+                     compactness_mean, concave.points_mean, radius_se, 
+                     perimeter_se, compactness_se, concave.points_se, 
+                     radius_worst, perimeter_worst, compactness_worst, 
+                     concave.points_worst))
+```
+
+By performing this feature selection, we drastically removed the number of variables, from 30 to 18. The final variables, along with the correlation, used for our models are as follows:
+
+```{r}
+corrplot(cor(cancer_data))
+```
+
+There are still some variables that are *slightly* correlated, but a more curated feature selection will be made later on in order to create our models.
+
+Now, we would like to **scale** the columns of our data into the range [0,1] for easier comparison, except the diagnosis and id column. Thus, each column has a mean of 0 with a standard deviation of 1.
+
+```{r}
+scaled_cancer_data <- cancer_data
+col_names <- colnames(cancer_data) # Keep column names
+
+scaled_cancer_data[,1:2] <- cancer_data[,1:2] # Id and diagnosis without scaling
+scaled_cancer_data[,3:18] <- scale(cancer_data[,3:18])
+colnames(scaled_cancer_data) <- col_names # Retrieve column names
+head(scaled_cancer_data)
+```
 
 ## Main Modeling Idea
 
-Our modeling idea has been to do the following analysis' with different types of models:
+As a summary, our modeling idea has been to do the following analysis' with different types of models:
 
-1. First, to remove features that are too similar in 
+1. **Linear Model**, with each of the remaining 18 features, to see which individual variable might have more influence in predicting correct diagnosis.
+2. **Multivariate Models**, done with 3 blocks of 6 variables from mean, se and worst, to see which variable block might have more influence in predicting correct diagnosis.
+3. **Multivariate Model**, done with all 18 features in order to obtain proper posterior checking, and see the minimum optimal amount of variables needed, and which ones, for equal or better prediction as this model with all 18 features.
+4. **Multivariate Model**, done with the best minimum optimal amount of variables, to check if the predictions obtained are equal or better than the model with all variables.
+5. **Multivariate Model**, done with Regularized Horseshoe Prior with the best minimum optimal amount of variables, in order to check if the predictions obtained are equal or better than the model with all variables.
+6. **Gaussian Model**, ...
 
 # Methodology
+## Priors
 
+We have chosen to work with Weakly Informative Priors because:
+
+1. A weakly informative prior means a reasonable representation of partial ignorance about the data, but that still includes a small amount of real-world information. Uniformity of distribution on an appropriate measurement scale means that the prior does not strongly favor particular values of the parameter.
+
+2. A weakly informative prior does not contribute strongly to the posterior. With a weakly informative prior we say that this small contribution from the prior "lets the data speak for itself".
+
+Because the target feature, the diagnosis, has binary values we will use a Bernoulli logistic regression approach: 
+
+$$ y \sim Bernoulli(y\ |\ logit^{-1}(\alpha + \beta \times x)),$$
+
+with $\alpha$ and $\beta$ are the intercept and regression coefficients, $x$ are the predictor variables and $y$ is the breast cancer diagnosis.
+
+## Coefficients
+
+For the $\alpha$ intercept coefficient and $\beta$ regression coefficient we have chosen a Normal and a Student T distribution respectively, to be more precise:
+
+1. $\alpha \sim Normal(mu_{\alpha},\ \sigma_{\alpha})$, with $mu_{\alpha} = 0$ and $\sigma_{\alpha} = 1$.
+2. $\beta \sim StudentT(df_{\beta},\ location_{\beta},\ scale_{\beta})$, with $df_{\beta} = 3$, $location_{\beta} = 0$ and $scale_{\beta} = 1$.
+
+The reason behind this choice in priors is because we scale our data, so it makes sense to select a normal distribution with mean centered in 0 and standard deviation 1.
+
+## Regularized Horseshoe Prior
+
+
+
+## Linear Models
+
+## Multivariate Models - Variable Blocks
+
+## Multivariate Model - Full Model
+
+## Multivariate Model - 
 
 # Results
+
+
 
 # Conclusion
 
 
 # References
+
+
+
+
+
+
+
+
+
+
