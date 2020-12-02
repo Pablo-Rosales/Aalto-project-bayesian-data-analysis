@@ -33,6 +33,9 @@ library(projpred)
 library(GGally)
 library(shiny)
 library(gridExtra)
+library(caret)
+library(e1071)
+library(pROC)
 SEED <- 48927
 ```
 
@@ -163,8 +166,8 @@ for (i in (1:length(linear_models))){
   cat("- Monitoring variable: ", variables[i], "\n")
   model <- linear_models[[i]]
   model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
-  model_r_eff <- relative_eff(exp(model_log_lik), cores = 2)
-  model_loo <- loo(model_log_lik, r_eff = model_r_eff, cores = 2)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
   pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
   
   aux_df <- data.frame("variable" = variables[i], "elpd_loo" = model_loo$estimates[1], "p_loo" = model_loo$estimates[2])
@@ -275,9 +278,14 @@ model_accuracies <- function(model){
 
 writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
 
+
 #beta <- student_t(df = 1, location = 0, scale = 2)
-beta <- normal(0, 100)
-alpha <- normal(0, 100)
+beta <- student_t(df = 3, location = 0, scale = 1)
+alpha <- normal(0, 1)
+
+p0 <- 3 # prior guess for the number of relevant variables
+tau0 <- p0 / (length(variables) - p0) * 1 / sqrt(nrow(scaled_cancer_data))
+rhs_prior <- hs(global_scale=tau0)
 
 linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
 ```
@@ -329,10 +337,7 @@ Worst is best.
 pareto_k_values <- list()
 multivariate_loo_estimates_df <- data.frame()
 mv_model_names <- c("mean", "se", "worst")
-#install.packages("caret")
-library(caret)
-library(e1071)
-library(pROC)
+
 for (i in (1:length(multivariate_models))){
   cat("- Monitoring variable group: ", mv_model_names[i], "\n")
   model <- multivariate_models[[i]]
@@ -410,7 +415,8 @@ print(multivariate_loo_estimates_df)
 # EJECUTAR UNA UNICA VEZ PARA CANTIDAD DE VARIABLES POR USAR
 ```{r}
 refmodel <- get_refmodel(multivariate_full)
-vs <- cv_varsel(refmodel, method = "forward")
+vs <- cv_varsel(refmodel, method = "forward", cv_method = 'LOO',
+                         nloo = nrow(scaled_cancer_data))
 solution_terms(vs)
 plot(vs, stats = c('elpd', 'rmse'))
 ```
@@ -449,6 +455,49 @@ mcmc_areas(as.matrix(multivariate_three))
 print(multivariate_loo_estimates_df)
 ```
 
+
+```{r}
+multivariate_rhsp <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
+                              + symmetry_mean + fractal_dimension_mean
+                              + texture_se + area_se + smoothness_se + concavity_se
+                              + symmetry_se + fractal_dimension_se
+                              + texture_worst + area_worst + smoothness_worst + concavity_worst
+                              + symmetry_worst + fractal_dimension_worst,
+                              data = scaled_cancer_data,
+                              family = binomial(link = "logit"),
+                              prior=rhs_prior, QR=TRUE,
+                              seed = SEED, refresh=0)
+
+accs <- model_accuracies(model = multivariate_rhsp)
+
+model_log_lik <- log_lik(multivariate_rhsp)
+model_loo <- loo(model_log_lik)
+pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+
+aux_df <- data.frame("variable group" = "rhs prior",
+                     "elpd_loo" = model_loo$estimates[1],
+                     "p_loo" = model_loo$estimates[2],
+                     "pred. negative" = accs[1],
+                     "pred. positive" = accs[2])
+multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
+
+yrep <- posterior_predict(multivariate_rhsp, draws = 50)
+ppc_dens_overlay(scaled_cancer_data$diagnosis, yrep)
+
+mcmc_areas(as.matrix(multivariate_rhsp))
+
+print(multivariate_loo_estimates_df)
+```
+
+```{r}
+#summary(multivariate_rhsp)
+#refmodel <- get_refmodel(multivariate_rhsp)
+
+vs <- cv_varsel(multivariate_rhsp, method = "forward", cv_method = 'LOO',
+                         nloo = nrow(scaled_cancer_data))
+solution_terms(vs)
+plot(vs, stats = c('elpd', 'rmse'))
+```
 
 # Model Comparison
 ## Full multivariate model

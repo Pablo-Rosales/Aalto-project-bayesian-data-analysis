@@ -8,8 +8,9 @@ parameters {
   real beta;
 }
 model {
-  alpha ~ normal(0, 10);
-  beta ~ student_t(1, 0, 2);
+  alpha ~ normal(0, 1);
+  //beta ~ student_t(1, 0, 2);
+  beta ~ normal(0, 1);
   y ~ bernoulli_logit(alpha + beta * x); //bernoulli_logit for binary outcome
 }
 generated quantities{

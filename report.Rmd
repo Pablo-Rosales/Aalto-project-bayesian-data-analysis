@@ -11,10 +11,47 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 # Introduction
-## Motivation
-## Problem
+
+Breast cancer most commonly presents as a lump that feels different from the rest of the breast tissue. More than 80% of cases are discovered when a person detects such a lump with the fingertips and there are various methods of assessing if the detected lump is a cyst, and if so, either benign or malignant.
+
+One such method of detecting the dangerousness of the mass is Fine-needle Aspiration (FNA). This diagnostic procedure consists of a very safe and minor procedure, where a thin hollow needle is inserted into the mass for obtaining cell samples and analyzing them under a microscope. A major surgical biopsy can be avoided by performing FNA, which is safer and far less traumatic, and possibly eliminating the need for hospitalization and other complications.
+
+The problem presented in this report deals with finding out which features of a FNA are more relevant in diagnosing a patient's mammary lump as benign or malignant. The data used is the [Breast Cancer Wisconsin (Diagnostic) Data Set](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29), a data set whose features are computed from digitized images of FNAs of breast mass.
+
 ## Exploratory Data Analysis
 
+The breast cancer dataset consists of 569 FNA procedures each with 32 features. Ten real-valued features are computed for each cell nucleus:
+
+a) radius
+b) texture
+c) perimeter
+d) area
+e) smoothness
+f) compactness
+g) concavity
+h) concave points
+i) symmetry
+j) fractal dimension
+
+From these, the mean, standard error and worst, are computed, thus making 10 features into 30. The other 2 features are the FNA ID number and the diagnosis, the target binary variable, which has values 'M' (malignant) or 'B' (benign).
+
+```{r}
+cancer_data = read.csv('cancer.csv')
+head(cancer_data)
+```
+
+```{r}
+cat("Number of rows (samples) = ", nrow(cancer_data))
+cat("\nNumber of columns (features) = ", ncol(cancer_data))
+```
+
+As an addendum when talking about the amount of features the dataset has, it can be noticed that instead of the 32 features mentioned, there are really 33 columns, this is because the last column, called 'X', is a pointless column present filled with 'N/A' values. This column will be dropped later on.
+
+## Main Modeling Idea
+
+Our modeling idea has been to do the following analysis' with different types of models:
+
+1. First, to remove features that are too similar in 
 
 # Methodology
 
