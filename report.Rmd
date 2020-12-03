@@ -173,9 +173,22 @@ For the $\alpha$ intercept coefficient and $\beta$ regression coefficient we hav
 
 The reason behind this choice in priors is because we scale our data, so it makes sense to select a normal distribution with mean centered in 0 and standard deviation 1.
 
+```{r}
+beta <- student_t(df = 3, location = 0, scale = 1)
+alpha <- normal(0, 1)
+```
+
 ## Regularized Horseshoe Prior
 
+We have also used a Weakly Regularized Horseshoe Prior, as *Piironen+Vehtari:RHS:2017*, where we included the prior assumption that a number of variables are more relevant that the rest. The assumption origin will be discussed in a future section, but as a summary, it has been assumed that there are 3 relevant variables, while the others are irrelevant. 
 
+$$PONER LAS FORMULAS AQUI$$
+
+```{r}
+p0 <- 3 # number of relevant variables
+tau0 <- p0 / (length(variables) - p0) * 1 / sqrt(nrow(scaled_cancer_data))
+rhs_prior <- hs(global_scale=tau0)
+```
 
 ## Linear Models
 
