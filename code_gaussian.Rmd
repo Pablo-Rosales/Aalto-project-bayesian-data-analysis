@@ -1,0 +1,267 @@
+---
+title: "project"
+author: "Anonymous"
+date: "11/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loaded packages
+
+```{r, message=FALSE, warning=FALSE}
+library(rstan) 
+rstan_options(auto_write = TRUE)
+options(mc.cores = 3)
+library(ggplot2)
+library(aaltobda)
+library(shinystan)
+library(bayesplot)
+library(loo)
+library(dlookr)
+library(corrplot)
+```
+
+# Data
+```{r}
+cancer_data = read.csv('cancer.csv')
+cancer_data$diagnosis <- as.character(cancer_data$diagnosis)
+cancer_data$diagnosis[cancer_data$diagnosis=="B"] <- as.numeric(0)
+cancer_data$diagnosis[cancer_data$diagnosis=="M"] <-as.numeric(1)
+cancer_data$diagnosis <- as.numeric(cancer_data$diagnosis)
+
+print(cancer_data)
+corrplot(cor(cancer_data[,2:12]))
+```
+
+```{r}
+cancer_data$radius_mean <- NULL
+cancer_data$perimeter_mean <- NULL
+cancer_data$compactness_mean <- NULL
+cancer_data$concave.points_mean <- NULL
+
+cancer_data$radius_se <- NULL
+cancer_data$perimeter_se <- NULL
+cancer_data$compactness_se <- NULL
+cancer_data$concave.points_se <- NULL
+
+cancer_data$radius_worst <- NULL
+cancer_data$perimeter_worst <- NULL
+cancer_data$compactness_worst <- NULL
+cancer_data$concave.points_worst <- NULL
+cancer_data$X <- NULL
+
+#cancer_data$area_worst <- NULL
+#cancer_data$texture_worst <- NULL
+```
+
+```{r}
+head(cancer_data)
+corrplot(cor(cancer_data))
+hist(cancer_data$texture_mean)
+hist(cancer_data$area_mean)
+hist(cancer_data$smoothness_mean)
+hist(cancer_data$symmetry_mean)
+hist(cancer_data$texture_se)
+```
+
+```{r}
+scaled_cancer_data <- cancer_data
+scaled_cancer_data[,3:18] <- scale(cancer_data[,3:18])
+scaled_cancer_data[,1:2] <- cancer_data[,1:2]
+```
+
+```{r}
+cancer_data
+```
+
+```{r}
+scaled_cancer_data
+```
+
+# Gaussian Process
+```{r}
+train_index <- sample(1:nrow(scaled_cancer_data), 0.8*nrow(scaled_cancer_data))
+test_index <- setdiff(1:nrow(scaled_cancer_data), train_index)
+
+train_set <-scaled_cancer_data[train_index, ]
+test_set <- scaled_cancer_data[test_index, ]
+train_set
+test_set
+```
+
+
+
+The third model that was considered for this project was a Gaussian Process based model. A Gaussian process is a stochastic process that provides a probability distribution over functions (Stan User's Guide). They are widely used for those data sets which cannot be easily represented by a linear function that may be extracted following a linear regression procedure, providing higher degree polynomial functions that can fit better the points of the given data set. A Gaussian process assigns to each of those polynomial functions a probability. Therefore, the most probable fit is the mean over the probability distribution (Stan video tutorial on Gaussian Processes).
+Gaussian processes are parametrized by a mean vector and a covariance matrix.
+An inverse gamma distribution was chosen as prior for characterizing the parameters of the kernel that computes the covariance (rho and gamma: the length scale and the amplitude parameters respectively).
+
+In order to later assess the performance of the gaussian model based on the quality of the predictions, the data set is divided into two subsets, one for training the model, with a higher number of observations, and another one for testing the model.
+
+The observations were extracted from the training set, while the predictions are performed on the test set, so then the accuracy can be computed.
+
+```{r}
+variables <- c("area_worst", "smoothness_mean", "texture_mean", "area_mean")
+gaussian_fits <- c()
+x_predicts_idx <- c()
+N_obs <- 200
+N_predict <- 100
+gaussian_model <- rstan::stan_model(file = "models/gaussian_process_bernoulli.stan")
+```
+
+
+
+```{r}
+for (variable in variables){
+  cat("\nSampling from model with variable: ", variable, "\n")
+  x_obs_idx <- sort(sample(1:length(train_set[,variable]), N_obs))
+  x_predict_idx <- sort(sample(1:length(test_set[,variable]), N_predict))
+  x_predicts_idx <- c(x_predicts_idx, x_predict_idx)
+  gaussian_model_data <- list(N_predict = N_predict,
+                              x_predict = test_set[,variable][x_predict_idx],
+                              N_obs = N_obs,
+                              x_obs = train_set[,variable][x_obs_idx],
+                              y_obs = train_set[,"diagnosis"][x_obs_idx])
+  #gaussian_fit <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_model_data, iter=2000, chains=1)
+  
+  gaussian_fit <-rstan::sampling(gaussian_model, data = gaussian_model_data,iter=1000, chains=2, refresh=0)
+  gaussian_fits <- c(gaussian_fits, gaussian_fit)
+}
+```
+
+## Gaussian Model - Evaluation of the quality of the predictions
+In the following figure, the density of the diagnosis in the test set is printed in black color. Overlapping, the densities for the predictions of the first 50 iterations. This graph enables visual assessment of the quality of the predictions. Preliminarly, the results seem to be satisfactory.
+```{r}
+for (j in 1:(length(gaussian_fits))){
+  params_gaussian <- extract(gaussian_fits[[j]])
+  plot(density(test_set$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), main=variables[j], ylab="density", xlab="", lwd=3)
+  for (i in 1:50){
+  lines(density(params_gaussian$y_predict[i,]), col="cyan")
+  }
+}
+```
+
+Another way to check if the predicted samples represent the reality is by directly plotting them (orange) and comparing with the target ones (grey). The concentration of points at 0 or 1 *y* values should be similar for the same values of *x*. In the given cases, by looking at the graph, there is a very similar tendency between the real values and the simulated ones, meaning that the result is good.
+```{r}
+for (j in 1:(length(gaussian_fits))){
+  params_gaussian <- extract(gaussian_fits[[j]])
+  layout(mat = matrix(c(1,2), nrow = 1, ncol = 2),heights = c(1, 1), widths = c(1,1))
+  plot(c(range(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]])), c(-1,1.5), ty="n", main = variables[j], xlab = variables[j], ylab = "diagnosis")
+  points(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], test_set[,"diagnosis"][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], col="grey", cex=1, pch=19)
+  #points(scaled_cancer_data[,variables[j]], scaled_cancer_data$diagnosis, col="grey")
+  plot(c(range(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]])), c(-1,1.5), ty="n", main = variables[j], xlab = variables[j], ylab = "predicted diagnosis")
+  for (i in 1:3){
+    points(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], params_gaussian$y_predict[i, 1:N_predict], col="orange", pch=3, cex=1)
+  }
+}
+```
+
+
+
+## Gaussian Model - Convergence Diagnostics
+A convergence analysis is carried out by making use of the computed chains. There are four paremeters characterizing the model. The convergence checks were performed for the three scalar ones. In the first figure there is a representation of the chains considering the space formed by two parameters, rho and alpha. The density of points is higher in a specific area. This is an important insight pointing towards convergence. Nevertheless, it is when checking the chains separately, as in the next graphs, when the convergence of the parameters can be confirmed.
+
+```{r}
+for (j in 1:(length(gaussian_fits))){
+  
+  params_gaussian_chains <- extract(gaussian_fits[[j]], permuted=FALSE, inc_warmup=TRUE)
+  layout(mat = matrix(c(1,2), nrow = 1, ncol = 2),heights = c(1,1), widths = c(1,1))
+  
+  plot(c(0,5), c(-2,5), ty='n', xlab='rho', ylab='alpha')
+  lines(params_gaussian_chains[,'chain:1', 'rho'], params_gaussian_chains[,'chain:1', 'alpha'],  col='grey', ty='o', pch=1)
+  lines(params_gaussian_chains[,'chain:2', 'rho'], params_gaussian_chains[,'chain:2', 'alpha'],  col='cyan', ty='o', pch=2)
+  #lines(params_gaussian_chains[,'chain:3', 'rho'], params_gaussian_chains[,'chain:3', 'alpha'],  col='green', ty='o', pch=3)
+  
+  plot(c(0,5), c(-2,5), ty='n', xlab='rho', ylab='a')
+  lines(params_gaussian_chains[,'chain:1', 'rho'],  params_gaussian_chains[,'chain:1', 'a'], col='grey', ty='o', pch=1)
+  lines(params_gaussian_chains[,'chain:2', 'rho'],  params_gaussian_chains[,'chain:2', 'a'], col='cyan', ty='o', pch=2)
+  #lines(params_gaussian_chains[,'chain:3', 'rho'],  params_gaussian_chains[,'chain:3', 'a'], col='green', ty='o', pch=3)
+} 
+```
+
+```{r}
+tcp1 <- traceplot(gaussian_fits[[1]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp2 <- traceplot(gaussian_fits[[2]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp3 <- traceplot(gaussian_fits[[3]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp4 <- traceplot(gaussian_fits[[4]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp1
+tcp2
+tcp3
+tcp4
+#tcp5 <- traceplot(gaussian_fits[[5]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+```
+Finally, in the appendix, the Rhat values for the Guassian Model are printed. Rhat provides a valid scalar metric for convergence checking. It is computed as the pooled variance of the chains divided by the variance of each individual chain. If there is convergence, the chains happen to have the same distribution, yielding a value close enough to 1 for the metric, which is the case.
+
+## Gaussian Model - Accuracy
+Since the model performs a binary classification, the accuracy can be computed as the fraction of correctly predicted labeled examples among all the predictions.
+```{r}
+accuracy_gaussian <- function(predictions, labels){
+  trues <- 0
+  falses <- 0
+  for (i in 1:length(predictions)){
+    if (predictions[i] == labels[i]){
+      trues = trues +1
+    }
+    else{
+      falses = falses +1
+    }
+  }
+  return(trues/(falses+trues))
+} 
+```
+
+```{r}
+accuracies <- c()
+for (j in 1:(length(gaussian_fits))){
+  accuracy_gaussian_sum <- 0
+  params_gaussian <- extract(gaussian_fits[[j]])
+  for (i in 1:(dim(params_gaussian$y_predict)[1])){
+    predictions <- params_gaussian$y_predict[i,1:N_predict]
+    labels <- test_set[,"diagnosis"][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]]
+    accuracy_gaussian_sum <- accuracy_gaussian(predictions, labels) + accuracy_gaussian_sum
+  }
+  accuracy_gaussian_mean <- accuracy_gaussian_sum/(dim(params_gaussian$y_predict)[1])
+  accuracies <- c(accuracies, accuracy_gaussian_mean)
+}
+```
+
+```{r}
+accuracies
+```
+
+## Gaussian Model - Diagnostics and Comparisons
+```{r}
+pareto_k_values <- list()
+linear_loo_estimates_df <- data.frame()
+
+for (j in 1:(length(gaussian_fits))){
+  cat("-Monitoring variable: ", variables[j], "\n")
+  model <- gaussian_fits[[j]]
+  model_log_lik <- extract_log_lik(model, parameter_name="log_lik", merge_chains=FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  
+  aux_df <- data.frame("variable" = variables[j], "elpd_loo" = model_loo$estimates[1], "p_loo" = model_loo$estimates[2])
+  linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
+}
+
+cat("-- Gaussian Model Comparison")
+print(linear_loo_estimates_df)
+```
+
+```{r}
+pareto_k_values
+```
+
+
+## Appendix E - Gaussian Model monitors
+```{r}
+for (j in 1:(length(gaussian_fits))){
+  monitor(gaussian_fits[[j]])
+}
+```
+
+
