@@ -50,6 +50,17 @@ One such method of detecting the dangerousness of the mass is Fine-needle Aspira
 
 The problem presented in this report deals with finding out which features of a FNA are more relevant in diagnosing a patient's mammary lump as benign or malignant. The data used is the [Breast Cancer Wisconsin (Diagnostic) Data Set](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29), a data set whose features are computed from digitized images of FNAs of breast mass.
 
+## Main Modeling Idea
+
+As a summary, our modeling idea has been to do the following analysis' with different types of models:
+
+1. **Linear Model**, with each of the remaining 18 features, to see which individual variable might have more influence in predicting correct diagnosis.
+2. **Multivariate Models**, done with 3 blocks of 6 variables from mean, se and worst, to see which variable block might have more influence in predicting correct diagnosis.
+3. **Multivariate Model**, done with all 18 features in order to obtain proper posterior checking, and see the minimum optimal amount of variables needed, and which ones, for equal or better prediction as this model with all 18 features.
+4. **Multivariate Model**, done with the best minimum optimal amount of variables, to check if the predictions obtained are equal or better than the model with all variables.
+5. **Multivariate Model**, done with Regularized Horseshoe Prior with the best minimum optimal amount of variables, in order to check if the predictions obtained are equal or better than the model with all variables.
+6. **Gaussian Model**, ...
+
 # Exploratory Data Analysis
 
 The breast cancer dataset consists of 569 FNA procedures each with 32 features. Ten real-valued features are computed for each cell nucleus:
@@ -95,7 +106,7 @@ cancer_data$diagnosis <- as.numeric(as.character(cancer_data$diagnosis))
 
 Is our data balanced? We would like to know more about how many benign and malignant tumors are contained in our dataset by visualizing a barplot.
 
-```{r}
+```{r, fig.height=3, fig.width=4}
 ggplot(cancer_data, aes(factor(diagnosis), fill=as.factor(diagnosis))) +
       geom_bar() + theme(legend.position="none") + xlab("Diagnosis") +
       ggtitle("Benign and malignant tumor")
@@ -145,17 +156,6 @@ colnames(scaled_cancer_data) <- col_names # Retrieve column names
 head(scaled_cancer_data)
 ```
 
-## Main Modeling Idea
-
-As a summary, our modeling idea has been to do the following analysis' with different types of models:
-
-1. **Linear Model**, with each of the remaining 18 features, to see which individual variable might have more influence in predicting correct diagnosis.
-2. **Multivariate Models**, done with 3 blocks of 6 variables from mean, se and worst, to see which variable block might have more influence in predicting correct diagnosis.
-3. **Multivariate Model**, done with all 18 features in order to obtain proper posterior checking, and see the minimum optimal amount of variables needed, and which ones, for equal or better prediction as this model with all 18 features.
-4. **Multivariate Model**, done with the best minimum optimal amount of variables, to check if the predictions obtained are equal or better than the model with all variables.
-5. **Multivariate Model**, done with Regularized Horseshoe Prior with the best minimum optimal amount of variables, in order to check if the predictions obtained are equal or better than the model with all variables.
-6. **Gaussian Model**, ...
-
 # Priors
 
 We have chosen to work with Weakly Informative Priors because:
@@ -177,7 +177,7 @@ For the $\alpha$ intercept coefficient and $\beta$ regression coefficient we hav
 1. $\alpha \sim Normal(\mu_{\alpha},\ \sigma_{\alpha})$, with $\mu_{\alpha} = 0$ and $\sigma_{\alpha} = 1$.
 2. $\beta \sim StudentT(df_{\beta},\ location_{\beta},\ scale_{\beta})$, with $df_{\beta} = 3$, $location_{\beta} = 0$ and $scale_{\beta} = 1$.
 
-The reason behind this choice in priors is because we scale our data, so it makes sense to select a normal distribution with mean centered in 0 and standard deviation 1.
+The reason behind this choice in priors for the intercept coefficient $\alpha$ is because we scale our data, so it makes sense to select a normal distribution with mean centered in 0 and standard deviation 1. On the other hand, for the regression coefficient $\beta$ we chose a StudenT distribution with 3 degrees of freedom and scale 1 because we want to ensure a finite variance and also a finite mean, which will create thick tails that reflect our uncertainty in the prior scale.
 
 ```{r}
 beta <- student_t(df = 3, location = 0, scale = 1)
@@ -186,34 +186,394 @@ alpha <- normal(0, 1)
 
 ## Regularized Horseshoe Prior
 
-We have also used a Weakly Regularized Horseshoe Prior, as *Piironen+Vehtari:RHS:2017*, where we included the prior assumption that a number of variables are more relevant that the rest. The assumption origin will be discussed in a future section, but as a summary, it has been assumed that there are 3 relevant variables, while the others are irrelevant. 
+We have also used a Weakly Regularized Horseshoe Prior, as *Piironen+Vehtari:RHS:2017*, where we included the prior assumption that a number of variables are more relevant that the rest. The assumption origin will be discussed in a future section, but as a summary, it has been assumed that there are 3 relevant variables, while the others are irrelevant.
 
-$$PONER LAS FORMULAS AQUI$$
+$$
+\begin{aligned}
+
+\beta_m &\sim N(0,\ \tau \times\ \tilde\lambda) \\[2pt]
+\tilde\lambda_m &\sim \frac{c \times \tilde\lambda_m}{\sqrt{c^2 + \tau^2\times \tilde\lambda_m^2}} \\[2pt]
+\lambda_m &\sim HalfCauchy(0,\ 1) \\[2pt]
+c^2 &\sim InvGamma(\frac{v}{2},\ \frac{v}{2}\times s^2)\\[2pt]
+\tau &\sim HalfCauchy(0,\ \tau_0)\\[2pt]
+
+\end{aligned}
+$$
 
 ```{r}
-p0 <- 3 # number of relevant variables
-tau0 <- p0 / (length(variables) - p0) * 1 / sqrt(nrows)
-rhs_prior <- hs(global_scale=tau0)
+p_0 <- 3 # number of relevant variables
+tau_0 <- p_0 / (length(variables) - p_0) * 1 / sqrt(nrows)
+rhs_prior <- hs(global_scale = tau_0)
 ```
 
 
 # Models
+Throughout this section, the designed modeling ideas will be presented in its respective subsection: explanation of the model, code, analysis and diagnostics.
+
 ## Linear Models
+Per each variable contained in the data set, a separate linear model is created in order to observe its efficiency and relevance.
 
-## Multivariate Models - Variable Blocks
+### Stan code
+The general **stan code** is designed as follows:
+```{r}
+writeLines(readLines("models/linear_model_bernoulli.stan"))
+linear_model <- rstan::stan_model(file = "models/linear_model_bernoulli.stan")
+```
+As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta \sim StudentT(3,0,1)$ for the regression coefficient. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
 
-## Multivariate Model - Full Model
+### Sampling
+The following code draws samples from the defined stan model. Each iteration pertains to a variable of the data set ('texture_mean', 'area_mean', etc...) contained in `variables` variable.
 
-## Multivariate Model - 
+```{r}
+linear_models <- c()
+y <- c(scaled_cancer_data$diagnosis) # Binary outcomes
+for (variable in variables){
+  cat("Sampling with variable: ", variable, "\n")
+  # Data
+  linear_model_data <- list(N=nrows, y=y, x=c(scaled_cancer_data[,variable]))
 
-# Results
+  # Model sampling
+  linear_sampling <- rstan::sampling(linear_model, data = linear_model_data,
+                                     seed = SEED, refresh=0)
+
+  # Model saved into a list for further analysis later on.
+  linear_models <- c(linear_models, linear_sampling)
+}
+```
+
+
+### Model comparisons
+
+By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variables for the Linear Model for posterior model comparison.
+
+Most of the models have exceptional k-values (lower than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `area_worst`, `area_mean`, `area_se`, `concavity_mean`.
+
+```{r}
+pareto_k_values <- list()
+linear_loo_estimates_df <- data.frame()
+
+for (i in (1:length(linear_models))){
+  cat("- Monitoring variable: ", variables[i], "\n")
+  model <- linear_models[[i]]
+  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik",
+                                   merge_chains = FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values,
+                            list(model_loo$diagnostics$pareto_k))
+
+  aux_df <- data.frame("variable" = variables[i],
+                       "elpd_loo" = model_loo$estimates[1],
+                       "p_loo" = model_loo$estimates[2])
+
+  linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
+}
+
+print(linear_loo_estimates_df)
+```
+
+The following output visualizes the Pareto-k values for each linear model.
+
+```{r}
+p <- list()
+for (i in 1:length(pareto_k_values)){
+  df <- data.frame(pareto_k_values[[i]])
+  colnames(df) <- c("values")
+  p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) +
+    geom_point(color="#10A5F5") +
+    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
+    ggtitle(variables[i]) +  xlab("Samples") + ylab("K-values")
+}
+do.call(grid.arrange, c(p[1:4], ncol=2))
+do.call(grid.arrange, c(p[5:8], ncol=2))
+do.call(grid.arrange, c(p[9:12], ncol=2))
+do.call(grid.arrange, c(p[13:16], ncol=2))
+do.call(grid.arrange, c(p[17:18], ncol=2))
+```
+
+
+
+
+
+### Posterior predictive checking
+
+```{r}
+y_sims <- list()
+for (model in linear_models){
+  params <- extract(model)
+  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
+}
+
+ppc1 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
+ppc2 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
+ppc3 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
+ppc4 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]])
+ppc5 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]])
+ppc6 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]])
+ppc7 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[7]])
+ppc8 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[8]])
+ppc9 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[9]])
+ppc10 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[10]])
+ppc11 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[11]])
+ppc12 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[12]])
+ppc13 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[13]])
+ppc14 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[14]])
+ppc15 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[15]])
+ppc16 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
+ppc17 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[17]])
+ppc18 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[18]])
+
+bayesplot_grid(ppc1, ppc2, ppc3, ppc4,
+               subtitles = c("texture_mean", "area_mean", "smoothness_mean",
+                             "concavity_mean"))
+bayesplot_grid(ppc5, ppc6, ppc7, ppc8,
+               subtitles = c("symmetry_mean", "fractal_dimension_mean",
+                             "texture_se", "area_se"))
+bayesplot_grid(ppc9, ppc10, ppc11, ppc12,
+               subtitles = c("smoothness_se", "concavity_se", "symmetry_se",
+                             "fractal_dimension_se"))
+bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles = 
+                 c("smoothness_worst", "concavity_worst", "smoothness_worst", 
+                   "concavity_worst"))
+bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst", 
+                                           "fractal_dimension_worst"))
+
+```
+
+
+## Multivariate Model - Variable Blocks
+
+Followed by the analysis done for each of the variables, it was decided to create three separate multivariate models, one for each variable block (type of variable): **mean**, **se** and **worst**. This was done in order to observe the efficiency and relevance over the type of the variable and see if some of the measure blocks shouldn't be considered when making the diagnosis.
+
+### Stan code
+
+```{r}
+writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
+linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
+```
+
+As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
+
+### Sampling
+The following code draws samples from the defined stan model. Each iteration pertains to a variable block ('mean', 'se' and 'worst'), comprised of 6 variables for each of them ('texture', 'area', 'smoothness', 'concavity', 'symmetry', 'fractal_dimension'), which are passed as predictors to the model.
+
+Additionally to the `rstan::sampling` models obtained, the same models were fitted with `stan_glm`, in order to be able to make use of functions that need the input to be a stan_glm object. Both types of model objects have been saved for posteriority, for obtaining the needed diagnostics.
+
+```{r}
+# Auxiliary function to calculate the accuracy of a model
+model_accuracies <- function(model){
+  y_pred <- posterior_epred(model)
+  preds <- colMeans(y_pred)
+  prueba <- predict(model, newdata=scaled_cancer_data, type='response')
+  
+  pr <- as.integer(preds >= 0.5)
+  acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
+  
+  print(confusionMatrix(factor(round(prueba)),factor(scaled_cancer_data$diagnosis)))
+  return (acc)
+}
+
+
+mv_mean_block <- list("texture_mean", "area_mean", "smoothness_mean",
+                      "concavity_mean", "symmetry_mean", "fractal_dimension_mean")
+mv_se_block <- list("texture_se", "area_se", "smoothness_se", "concavity_se",
+                       "symmetry_se", "fractal_dimension_se")
+mv_worst_block <- list("texture_worst", "area_worst", "smoothness_worst",
+                       "concavity_worst", "symmetry_worst", "fractal_dimension_worst")
+mv_var_block <- list(mv_mean_block, mv_se_block, mv_worst_block)
+
+multivariate_models <- c()
+multivariate_glms <- list()
+
+for (i in (1:3)){
+  var_block <- mv_var_block[[i]]
+  print(paste("diagnosis ~", paste(var_block, collapse = "+")))
+  multivariate_block_data <- list(N=length(scaled_cancer_data$diagnosis), 
+                               y=c(scaled_cancer_data$diagnosis), 
+                               x_1=scaled_cancer_data[,var_block[[1]]],
+                               x_2=scaled_cancer_data[,var_block[[2]]],
+                               x_3=scaled_cancer_data[,var_block[[3]]],
+                               x_4=scaled_cancer_data[,var_block[[4]]],
+                               x_5=scaled_cancer_data[,var_block[[5]]],
+                               x_6=scaled_cancer_data[,var_block[[6]]])
+  multivariate_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
+                                           data = multivariate_block_data,
+                                           seed = SEED, refresh=0)
+  multivariate_models <- c(multivariate_models, multivariate_sampling)
+  
+  multivariate_glm <- stan_glm(paste("diagnosis ~", paste(var_block, collapse = "+")),
+                               data = scaled_cancer_data,
+                               family = binomial(link = "logit"), 
+                               prior = beta, prior_intercept = alpha, QR=TRUE,
+                               seed = SEED, refresh=0)
+  multivariate_glms <- append(multivariate_glms, list(multivariate_glm))
+}
+```
+
+### Model comparisons
+
+By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variable blocks for the Multivariate Model for posterior model comparison.
+
+All of the models have relatively exceptional k-values (lower than 0.7), with a few high exceptions (equal or higher than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `worst block`, `mean block` and `se block`.
+
+What we take out of this analysis by variable blocks is that, in general, the `se` variables might not be as influential for predictions as the other blocks. Although this analysis did not bring a more specific result, it was an interesting experiment to carry out in order to check if any of the variable blocks might influence too badly the final model.
+
+Finally, it **must** be mentioned that the difference in prediction accuracy OF the `se block` and the `mean block` are ... .
+
+```{r}
+pareto_k_values <- list()
+multivariate_loo_estimates_df <- data.frame()
+mv_model_names <- c("mean", "se", "worst")
+
+for (i in (1:length(multivariate_models))){
+  cat("- Monitoring variable group: ", mv_model_names[i], "\n")
+  model <- multivariate_models[[i]]
+  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  
+  accs <- model_accuracies(model = multivariate_glms[[i]])
+  
+  aux_df <- data.frame("variable group" = mv_model_names[i],
+                       "elpd_loo" = model_loo$estimates[1],
+                       "p_loo" = model_loo$estimates[2],
+                       "accuracy" = accs[1])
+  
+  multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
+}
+
+print(multivariate_loo_estimates_df)
+```
+
+```{r}
+p <- list()
+block_name <- c("mean block", "se block", "worst block")
+for (i in 1:length(pareto_k_values)){
+  df <- data.frame(pareto_k_values[[i]])
+  colnames(df) <- c("values")
+  p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) +
+    geom_point(color="#10A5F5") +
+    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
+    ggtitle(block_name[i]) +  xlab("Samples") + ylab("K-values")
+}
+
+p[1]
+p[2]
+p[3]
+```
+
+### Posterior predictive checking
+
+In the posterior predictive checking for each of the variable blocks, it is noticeable how much less the `se` block can influence the fitting of the model and getting correct predictive results. 
+
+```{r}
+y_sims <- list()
+for (model in multivariate_models){
+  params <- extract(model)
+  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
+}
+
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]]), subtitles = c("mean block"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), subtitles = c("se block"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), subtitles = c("worst block"))
+```
+
+
+
+
+
+
+# Convergence Diagnostics
+## Diagnostic Metrics
+INTRODUCCION MEJOR A ESTO
+
+$\hat{R}$ can be used to monitor if a group of chains has converged to the target distribution. This can be done by comparing the between and within-chain estimate for model parameters. If chains have not converged, meaning that they have not mixed well, $\hat{R}$ will be greater than one. If chains have converged, the $\hat{R}$ value will be virtually one.
+
+We would like to have a diagnostic that tell us when the weights are problematic, as we could have vastly imbalanced weights. In this case, we could use **effective sample size ($S_{eff}$)**, a quantitative measure of efficiency in **importance sampling**. $S_{eff}$ represents the number of independent samples required to obtain an importance sampling estimate with about the same efficiency as if we would have used all the samples.
+
+A divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value. To evaluate this, we can use the function `check_hmc_diagnostics`.
+
+## Linear Model Diagnostics
+As seen in the `Appendix A` `monitor` outputs, all $\hat{R}$ values were 1 or close to 1, which means that the linear models' chains have converged.
+
+As seen in `Appendix A`[Appendix A], the `monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good). Additionally, our ESS values are way higher than 100, which established that our values are good.
+
+As seen in `Appendix A - Divergences`, we have obtained 0 divergences for all of our models.
+
+## Multivariate Model Diagnostics
+### Blocks
+
+### Full Model
+
+### Three Variables
+
+### Regularized Horseshoe
+
+
+# Posterior Predictive Checking
+
+# Predictive Performance Assessment
+In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
+
+[Decir si los valores predicción, sensitvity y specificity son buenos]
+
+
+
 
 
 
 # Conclusion
 
+## Issues and Improvements
+
+- no poder usar stan::sampling con metodos de stan_glm
+- super incomodo utilizar R para trabajar con datos
+- 
+
+## Group Self-Reflection
+
+
 
 # References
+
+# Appendices
+## Appendix A - Linear models
+### Monitor
+
+Monitor output has been omitted for convenience, only relevant variables (Rhat, Bulk_ESS and Tail_ESS) are shown.
+
+```{r}
+for (i in 1:length(linear_models)){
+  cat("\nMonitor for model variable:", variables[i], '\n')
+  cat("-------------------------\n")
+  model_mon <- monitor(linear_models[[i]], print=FALSE)
+  rhat_alpha <- round(model_mon$Rhat[1], 3)
+  rhat_beta <- round(model_mon$Rhat[2], 3)
+  bulk_alpha <- round(model_mon$Bulk_ESS[1], 3)
+  bulk_beta <- round(model_mon$Bulk_ESS[2], 3)
+  tail_alpha <- round(model_mon$Tail_ESS[1], 3)
+  tail_beta <- round(model_mon$Tail_ESS[2], 3)
+  cat("Rhat of alpha and beta:", rhat_alpha, rhat_beta, '\n')
+  cat("Bulk_ESS for alpha and beta:", bulk_alpha, bulk_beta, '\n')
+  cat("Tail_ESS for alpha and beta:", tail_alpha, tail_beta, '\n')
+  
+}
+```
+
+### Divergences
+
+```{r}
+for (i in (1:length(linear_models))){
+  cat("\n\n- Checking divergence for variable: ", variables[i], "\n")
+  check_hmc_diagnostics(linear_models[[i]])
+}
+```
+
+
+## Appendix B - Multivariate models
+
+## Appendix C - Gaussian model
 
 
 

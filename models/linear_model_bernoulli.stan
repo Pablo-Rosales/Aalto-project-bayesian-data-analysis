@@ -9,13 +9,12 @@ parameters {
 }
 model {
   alpha ~ normal(0, 1);
-  //beta ~ student_t(1, 0, 2);
-  beta ~ normal(0, 1);
-  y ~ bernoulli_logit(alpha + beta * x); //bernoulli_logit for binary outcome
+  beta ~ student_t(3, 0, 1);
+  y ~ bernoulli_logit(alpha + beta * x);
 }
 generated quantities{
   vector[N] log_lik;
-  int<lower=0,upper=1> y_sim[N]; //simulated data from posterior
+  int<lower=0,upper=1> y_sim[N];
   
   for (i in 1:N){
     log_lik[i] = bernoulli_logit_lpmf(y[i] | alpha + beta * x[i]);
