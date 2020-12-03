@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, message=FALSE, warning=FALSE}
 library(rstan) 
 rstan_options(auto_write = TRUE)
-options(mc.cores = 1)
+options(mc.cores = 3)
 library(ggplot2)
 library(aaltobda)
 library(shinystan)
@@ -53,8 +53,8 @@ cancer_data$compactness_worst <- NULL
 cancer_data$concave.points_worst <- NULL
 cancer_data$X <- NULL
 
-cancer_data$area_worst <- NULL
-cancer_data$texture_worst <- NULL
+#cancer_data$area_worst <- NULL
+#cancer_data$texture_worst <- NULL
 ```
 
 ```{r}
@@ -81,606 +81,187 @@ cancer_data
 scaled_cancer_data
 ```
 
-# GAUSSIAN PROCESS
+# Gaussian Process
+```{r}
+train_index <- sample(1:nrow(scaled_cancer_data), 0.8*nrow(scaled_cancer_data))
+test_index <- setdiff(1:nrow(scaled_cancer_data), train_index)
+
+train_set <-scaled_cancer_data[train_index, ]
+test_set <- scaled_cancer_data[test_index, ]
+train_set
+test_set
+```
+
+
+
 The third model that was considered for this project was a Gaussian Process based model. A Gaussian process is a stochastic process that provides a probability distribution over functions (Stan User's Guide). They are widely used for those data sets which cannot be easily represented by a linear function that may be extracted following a linear regression procedure, providing higher degree polynomial functions that can fit better the points of the given data set. A Gaussian process assigns to each of those polynomial functions a probability. Therefore, the most probable fit is the mean over the probability distribution (Stan video tutorial on Gaussian Processes).
 Gaussian processes are parametrized by a mean vector and a covariance matrix.
 An inverse gamma distribution was chosen as prior for characterizing the parameters of the kernel that computes the covariance (rho and gamma: the length scale and the amplitude parameters respectively).
-200 random observations are selected from the data set as points (variable, target). 100 is the number of predictions that are computed for equally spaced values of x in the range of the chosen variable. The yielded results are the following:
 
-# Gaussian Model - texture_mean
-For this first variable, three chains of the Monte Carlo process are ran in order to analyze the covergence and perform a more complete study of the results.
+In order to later assess the performance of the gaussian model based on the quality of the predictions, the data set is divided into two subsets, one for training the model, with a higher number of observations, and another one for testing the model.
+
+The observations were extracted from the training set, while the predictions are performed on the test set, so then the accuracy can be computed.
+
 ```{r}
+variables <- c("area_worst", "smoothness_mean", "texture_mean", "area_mean")
+gaussian_fits <- c()
+x_predicts_idx <- c()
 N_obs <- 200
 N_predict <- 100
-```
-
-```{r}
-x_obs_idx_1 <- sort(sample(1:length(scaled_cancer_data$texture_mean), N_obs))
-x_predict_1 <- seq(range(scaled_cancer_data$texture_mean)[1],range(scaled_cancer_data$texture_mean)[2],length.out=N_predict)
+gaussian_model <- rstan::stan_model(file = "models/gaussian_process_bernoulli.stan")
 ```
 
 
 
 ```{r}
-# Takes around 20 min to run with the 3 chains
-gaussian_data_1 <- list(N_predict = N_predict, 
-             x_predict = x_predict_1,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$texture_mean[x_obs_idx_1],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_1])
-
-gaussian_fit_1 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_1, iter=2000, chains=3)
-```
-
-```{r}
-params_1 <- extract(gaussian_fit_1)
-```
-
-In the following figure, the density of the target variable (diagnosis), as well as the density of the predicted ones are overlapped. The result seems acceptable.
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_1$y_predict[i,]), col="cyan")
-  }
-```
-Another way to check if the predicted samples represent the reality is by directly plotting them (orange) and comparing with the target ones (grey). The concentration of points at 0 or 1 y values should be similar for the same values of x. However, notice that the x values of the predicted samples are equally distributed along the range of the variable, therefore, this condition is not so clearly visible. Nevertheless, in this case it is highly illustrative. By looking at the graph, there is a very similar tendency between the real values and the simulated ones, meaning that the result is good.
-
-```{r}
-plot(c(range(scaled_cancer_data$texture_mean)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$texture_mean, scaled_cancer_data$diagnosis, col="grey")
-plot(c(range(scaled_cancer_data$texture_mean)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_1, params_1$y_predict[i, 1:100], col="orange")
+for (variable in variables){
+  cat("\nSampling from model with variable: ", variable, "\n")
+  x_obs_idx <- sort(sample(1:length(train_set[,variable]), N_obs))
+  x_predict_idx <- sort(sample(1:length(test_set[,variable]), N_predict))
+  x_predicts_idx <- c(x_predicts_idx, x_predict_idx)
+  gaussian_model_data <- list(N_predict = N_predict,
+                              x_predict = test_set[,variable][x_predict_idx],
+                              N_obs = N_obs,
+                              x_obs = train_set[,variable][x_obs_idx],
+                              y_obs = train_set[,"diagnosis"][x_obs_idx])
+  #gaussian_fit <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_model_data, iter=2000, chains=1)
+  
+  gaussian_fit <-rstan::sampling(gaussian_model, data = gaussian_model_data,iter=1000, chains=2, refresh=0)
+  gaussian_fits <- c(gaussian_fits, gaussian_fit)
 }
 ```
 
-In the following figure, the latent functions provided by the Gaussian Process are represented overlapping the points of the data set. Considering the selected data set, this graph does not provide much information, since all the points are concentrated along y=0 or y=1, making it more complicated to see how good the generated functions fit the data.
-
+## Gaussian Model - Evaluation of the quality of the predictions
+In the following figure, the density of the diagnosis in the test set is printed in black color. Overlapping, the densities for the predictions of the first 50 iterations. This graph enables visual assessment of the quality of the predictions. Preliminarly, the results seem to be satisfactory.
 ```{r}
-plot(c(-5,8), c(-2,2), ty='n')
-for (i in 1:10){
-  lines(x_predict_1, params_1$f[i, (N_obs+1):(N_obs+N_predict)], col="grey")
-  if (i==7){
-    lines(x_predict_1, params_1$f[i, (N_obs+1):(N_obs+N_predict)], col="blue")
+for (j in 1:(length(gaussian_fits))){
+  params_gaussian <- extract(gaussian_fits[[j]])
+  plot(density(test_set$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), main=variables[j], ylab="density", xlab="", lwd=3)
+  for (i in 1:50){
+  lines(density(params_gaussian$y_predict[i,]), col="cyan")
   }
 }
-points(scaled_cancer_data$texture_mean, scaled_cancer_data$diagnosis, col='orange', cex=0.3)
 ```
 
-## Convergence Analysis
-Finally, a convergence analysis is carried out by making use of the computed chains. There are four paremeters characterizing the model. The convergence checks were performed for the three scalar ones. In the first figure there is a representation of the chains considering the space formed by two parameters, rho and alpha. The density of points is higher in a specific area is an important insight pointing towards convergence. Nevertheless, it is when checking the chains separately, as in the other graph, when the convergence of the parameters can be confirmed.
+Another way to check if the predicted samples represent the reality is by directly plotting them (orange) and comparing with the target ones (grey). The concentration of points at 0 or 1 *y* values should be similar for the same values of *x*. In the given cases, by looking at the graph, there is a very similar tendency between the real values and the simulated ones, meaning that the result is good.
 ```{r}
-# Traceplots of the 3 chains
-params_1_chains <- extract(gaussian_fit_1, permuted=FALSE, inc_warmup=TRUE)
-plot(c(0,5), c(-2,5), ty='n', xlab='rho', ylab='alpha')
-lines(params_1_chains[,'chain:1', 'rho'], params_1_chains[,'chain:1', 'alpha'],  col='grey', ty='o', pch=20)
-lines(params_1_chains[,'chain:2', 'rho'], params_1_chains[,'chain:2', 'alpha'],  col='cyan', ty='o', pch=20)
-lines(params_1_chains[,'chain:3', 'rho'], params_1_chains[,'chain:3', 'alpha'],  col='green', ty='o', pch=20)
-traceplot(gaussian_fit_1, pars=c("rho", "alpha"))
-```
-Performing the same analysis as in the previous case, the convergence is also confirmed for the variables rho and a.
-```{r}
-# Traceplots of the 3 chains
-params_1_chains <- extract(gaussian_fit_1, permuted=FALSE, inc_warmup=TRUE)
-plot(c(0,5), c(-2,5), ty='n', xlab='rho', ylab='a')
-lines(params_1_chains[,'chain:1', 'rho'],  params_1_chains[,'chain:1', 'a'], col='grey', ty='o', pch=20)
-lines(params_1_chains[,'chain:2', 'rho'],  params_1_chains[,'chain:2', 'a'], col='cyan', ty='o', pch=20)
-lines(params_1_chains[,'chain:3', 'rho'],  params_1_chains[,'chain:3', 'a'], col='green', ty='o', pch=20)
-traceplot(gaussian_fit_1, pars=c("rho", "a"))
-```
-
-Finally, Rhat provides a valid scalar metric for convergence checking. It is computed as the pooled variance of the chains divided by the variance of each individual chain. If there is convergence, the chains happen to have the same distribution, yielding a value 1 for the metric, which is the case:
-
-```{r}
-# Rhat values
-print(gaussian_fit_1)
-```
-
-# Gaussian Model - area_mean
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_2 <- sort(sample(1:length(scaled_cancer_data$area_mean), N_obs))
-x_predict_2 <- seq(range(scaled_cancer_data$area_mean)[1],range(scaled_cancer_data$area_mean)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_2 <- list(N_predict = N_predict, 
-             x_predict = x_predict_2,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$area_mean[x_obs_idx_2],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_2])
-
-gaussian_fit_2 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_2, iter=2000, chains=1)
-```
-
-
-```{r}
-params_2 <- extract(gaussian_fit_2)
-```
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_2$y_predict[i,]), col="cyan")
+for (j in 1:(length(gaussian_fits))){
+  params_gaussian <- extract(gaussian_fits[[j]])
+  layout(mat = matrix(c(1,2), nrow = 1, ncol = 2),heights = c(1, 1), widths = c(1,1))
+  plot(c(range(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]])), c(-1,1.5), ty="n", main = variables[j], xlab = variables[j], ylab = "diagnosis")
+  points(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], test_set[,"diagnosis"][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], col="grey", cex=1, pch=19)
+  #points(scaled_cancer_data[,variables[j]], scaled_cancer_data$diagnosis, col="grey")
+  plot(c(range(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]])), c(-1,1.5), ty="n", main = variables[j], xlab = variables[j], ylab = "predicted diagnosis")
+  for (i in 1:3){
+    points(test_set[,variables[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], params_gaussian$y_predict[i, 1:N_predict], col="orange", pch=3, cex=1)
   }
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$area_mean)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$area_mean, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$area_mean)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_2, params_2$y_predict[i, 1:100], col="orange")
 }
 ```
 
-```{r}
-plot(c(-5,8), c(-2,2), ty='n')
-for (i in 1:10){
-  lines(x_predict_2, params_2$f[i, (N_obs+1):(N_obs+N_predict)], col="grey")
-}
-points(scaled_cancer_data$area_mean, scaled_cancer_data$diagnosis, col='orange', cex=0.3)
-```
-
-## Convergence Analysis
-```{r}
-# Traceplots of the 3 chains
-params_2_chains <- extract(gaussian_fit_2, permuted=FALSE, inc_warmup=TRUE)
-plot(c(0,5), c(-2,5), ty='n', xlab='rho', ylab='alpha')
-lines(params_2_chains[,'chain:1', 'rho'], params_2_chains[,'chain:1', 'alpha'], col='grey', ty='o', pch=20)
-lines(params_2_chains[,'chain:2', 'rho'], params_2_chains[,'chain:2', 'alpha'], col='cyan', ty='o', pch=20)
-lines(params_2_chains[,'chain:3', 'rho'], params_2_chains[,'chain:3', 'alpha'], col='green', ty='o', pch=20)
-```
 
 
-# Gaussian Model - smoothness_mean
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
+## Gaussian Model - Convergence Diagnostics
+A convergence analysis is carried out by making use of the computed chains. There are four paremeters characterizing the model. The convergence checks were performed for the three scalar ones. In the first figure there is a representation of the chains considering the space formed by two parameters, rho and alpha. The density of points is higher in a specific area. This is an important insight pointing towards convergence. Nevertheless, it is when checking the chains separately, as in the next graphs, when the convergence of the parameters can be confirmed.
 
 ```{r}
-x_obs_idx_3 <- sort(sample(1:length(scaled_cancer_data$smoothness_mean), N_obs))
-x_predict_3 <- seq(range(scaled_cancer_data$smoothness_mean)[1],range(scaled_cancer_data$smoothness_mean)[2],length.out=N_predict)
+for (j in 1:(length(gaussian_fits))){
+  
+  params_gaussian_chains <- extract(gaussian_fits[[j]], permuted=FALSE, inc_warmup=TRUE)
+  layout(mat = matrix(c(1,2), nrow = 1, ncol = 2),heights = c(1,1), widths = c(1,1))
+  
+  plot(c(0,5), c(-2,5), ty='n', xlab='rho', ylab='alpha')
+  lines(params_gaussian_chains[,'chain:1', 'rho'], params_gaussian_chains[,'chain:1', 'alpha'],  col='grey', ty='o', pch=1)
+  lines(params_gaussian_chains[,'chain:2', 'rho'], params_gaussian_chains[,'chain:2', 'alpha'],  col='cyan', ty='o', pch=2)
+  #lines(params_gaussian_chains[,'chain:3', 'rho'], params_gaussian_chains[,'chain:3', 'alpha'],  col='green', ty='o', pch=3)
+  
+  plot(c(0,5), c(-2,5), ty='n', xlab='rho', ylab='a')
+  lines(params_gaussian_chains[,'chain:1', 'rho'],  params_gaussian_chains[,'chain:1', 'a'], col='grey', ty='o', pch=1)
+  lines(params_gaussian_chains[,'chain:2', 'rho'],  params_gaussian_chains[,'chain:2', 'a'], col='cyan', ty='o', pch=2)
+  #lines(params_gaussian_chains[,'chain:3', 'rho'],  params_gaussian_chains[,'chain:3', 'a'], col='green', ty='o', pch=3)
+} 
 ```
 
 ```{r}
-gaussian_data_3 <- list(N_predict = N_predict, 
-             x_predict = x_predict_3,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$smoothness_mean[x_obs_idx_3],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_3])
-
-gaussian_fit_3 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_3, iter=2000, chains=1)
+tcp1 <- traceplot(gaussian_fits[[1]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp2 <- traceplot(gaussian_fits[[2]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp3 <- traceplot(gaussian_fits[[3]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp4 <- traceplot(gaussian_fits[[4]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+tcp1
+tcp2
+tcp3
+tcp4
+#tcp5 <- traceplot(gaussian_fits[[5]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 ```
+Finally, in the appendix, the Rhat values for the Guassian Model are printed. Rhat provides a valid scalar metric for convergence checking. It is computed as the pooled variance of the chains divided by the variance of each individual chain. If there is convergence, the chains happen to have the same distribution, yielding a value close enough to 1 for the metric, which is the case.
 
+## Gaussian Model - Accuracy
+Since the model performs a binary classification, the accuracy can be computed as the fraction of correctly predicted labeled examples among all the predictions.
 ```{r}
-params_3 <- extract(gaussian_fit_3)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$smoothness_mean)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$smoothness_mean, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$smoothness_mean)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_3, params_3$y_predict[i, 1:100], col="orange")
-}
-```
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_3$y_predict[i,]), col="cyan")
+accuracy_gaussian <- function(predictions, labels){
+  trues <- 0
+  falses <- 0
+  for (i in 1:length(predictions)){
+    if (predictions[i] == labels[i]){
+      trues = trues +1
+    }
+    else{
+      falses = falses +1
+    }
   }
-```
-
-# Gaussian Model - concavity_mean
-```{r}
-N_obs <- 200
-N_predict <- 100
+  return(trues/(falses+trues))
+} 
 ```
 
 ```{r}
-x_obs_idx_4 <- sort(sample(1:length(scaled_cancer_data$concavity_mean), N_obs))
-x_predict_4 <- seq(range(scaled_cancer_data$concavity_mean)[1],range(scaled_cancer_data$concavity_mean)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_4 <- list(N_predict = N_predict, 
-             x_predict = x_predict_4,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$concavity_mean[x_obs_idx_4],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_4])
-
-gaussian_fit_4 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_4, iter=2000, chains=1)
-```
-
-
-```{r}
-params_4 <- extract(gaussian_fit_4)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$concavity_mean)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$concavity_mean, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$concavity_mean)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_4, params_4$y_predict[i, 1:100], col="orange")
+accuracies <- c()
+for (j in 1:(length(gaussian_fits))){
+  accuracy_gaussian_sum <- 0
+  params_gaussian <- extract(gaussian_fits[[j]])
+  for (i in 1:(dim(params_gaussian$y_predict)[1])){
+    predictions <- params_gaussian$y_predict[i,1:N_predict]
+    labels <- test_set[,"diagnosis"][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]]
+    accuracy_gaussian_sum <- accuracy_gaussian(predictions, labels) + accuracy_gaussian_sum
+  }
+  accuracy_gaussian_mean <- accuracy_gaussian_sum/(dim(params_gaussian$y_predict)[1])
+  accuracies <- c(accuracies, accuracy_gaussian_mean)
 }
 ```
 
 ```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_4$y_predict[i,]), col="cyan")
-  }
+accuracies
 ```
 
-# Gaussian Model - symmetry_mean
+## Gaussian Model - Diagnostics and Comparisons
 ```{r}
-N_obs <- 200
-N_predict <- 100
-```
+pareto_k_values <- list()
+linear_loo_estimates_df <- data.frame()
 
-```{r}
-x_obs_idx_5 <- sort(sample(1:length(scaled_cancer_data$symmetry_mean), N_obs))
-x_predict_5 <- seq(range(scaled_cancer_data$symmetry_mean)[1],range(scaled_cancer_data$symmetry_mean)[2],length.out=N_predict)
-```
+for (j in 1:(length(gaussian_fits))){
+  cat("-Monitoring variable: ", variables[j], "\n")
+  model <- gaussian_fits[[j]]
+  model_log_lik <- extract_log_lik(model, parameter_name="log_lik", merge_chains=FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  
+  aux_df <- data.frame("variable" = variables[j], "elpd_loo" = model_loo$estimates[1], "p_loo" = model_loo$estimates[2])
+  linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
+}
 
-```{r}
-gaussian_data_5 <- list(N_predict = N_predict, 
-             x_predict = x_predict_5,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$symmetry_mean[x_obs_idx_5],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_5])
-
-gaussian_fit_5 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_5, iter=2000, chains=1)
+cat("-- Gaussian Model Comparison")
+print(linear_loo_estimates_df)
 ```
 
 ```{r}
-params_5 <- extract(gaussian_fit_5)
+pareto_k_values
 ```
 
+
+## Appendix E - Gaussian Model monitors
 ```{r}
-plot(c(range(scaled_cancer_data$symmetry_mean)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$symmetry_mean, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$symmetry_mean)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_5, params_5$y_predict[i, 1:100], col="orange")
+for (j in 1:(length(gaussian_fits))){
+  monitor(gaussian_fits[[j]])
 }
 ```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_5$y_predict[i,]), col="cyan")
-  }
-```
-
-# Gaussian Model - fractal_dimension_mean
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_6 <- sort(sample(1:length(scaled_cancer_data$fractal_dimension_mean), N_obs))
-x_predict_6 <- seq(range(scaled_cancer_data$fractal_dimension_mean)[1],range(scaled_cancer_data$fractal_dimension_mean)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_6 <- list(N_predict = N_predict, 
-             x_predict = x_predict_6,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$fractal_dimension_mean[x_obs_idx_6],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_6])
-
-gaussian_fit_6 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_6, iter=2000, chains=1)
-```
-
-```{r}
-params_6 <- extract(gaussian_fit_6)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$fractal_dimension_mean)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$fractal_dimension_mean, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$fractal_dimension_mean)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_6, params_6$y_predict[i, 1:100], col="orange")
-}
-```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_6$y_predict[i,]), col="cyan")
-  }
-```
-
-# Gaussian Model - texture_se
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_7 <- sort(sample(1:length(scaled_cancer_data$texture_se), N_obs))
-x_predict_7 <- seq(range(scaled_cancer_data$texture_se)[1],range(scaled_cancer_data$texture_se)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_7 <- list(N_predict = N_predict, 
-             x_predict = x_predict_7,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$texture_se[x_obs_idx_7],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_7])
-
-gaussian_fit_7 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_7, iter=2000, chains=1)
-```
-
-```{r}
-params_7 <- extract(gaussian_fit_7)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$texture_se)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$texture_se, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$texture_se)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_7, params_7$y_predict[i, 1:100], col="orange")
-}
-```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_7$y_predict[i,]), col="cyan")
-  }
-```
-
-# Gaussian Model - area_se
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_8 <- sort(sample(1:length(scaled_cancer_data$area_se), N_obs))
-x_predict_8 <- seq(range(scaled_cancer_data$area_se)[1],range(scaled_cancer_data$area_se)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_8 <- list(N_predict = N_predict, 
-             x_predict = x_predict_8,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$area_se[x_obs_idx_8],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_8])
-
-gaussian_fit_8 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_8, iter=2000, chains=1)
-```
-
-```{r}
-params_8 <- extract(gaussian_fit_8)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$area_se)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$area_se, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$area_se)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_8, params_8$y_predict[i, 1:100], col="orange")
-}
-```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_8$y_predict[i,]), col="cyan")
-  }
-```
-
-# Gaussian Model - smoothness_se
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_9 <- sort(sample(1:length(scaled_cancer_data$smoothness_se), N_obs))
-x_predict_9 <- seq(range(scaled_cancer_data$smoothness_se)[1],range(scaled_cancer_data$smoothness_se)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_9 <- list(N_predict = N_predict, 
-             x_predict = x_predict_9,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$smoothness_se[x_obs_idx_9],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_9])
-
-gaussian_fit_9 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_9, iter=2000, chains=1)
-```
-
-```{r}
-params_9 <- extract(gaussian_fit_9)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$smoothness_se)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$smoothness_se, scaled_cancer_data$diagnosis, col="grey")
-plot(c(range(scaled_cancer_data$smoothness_se)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_9, params_9$y_predict[i, 1:100], col="orange")
-}
-```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_9$y_predict[i,]), col="cyan")
-  }
-```
-
-# Gaussian Model - concavity_se
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_10 <- sort(sample(1:length(scaled_cancer_data$concavity_se), N_obs))
-x_predict_10 <- seq(range(scaled_cancer_data$concavity_se)[1],range(scaled_cancer_data$concavity_se)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_10 <- list(N_predict = N_predict, 
-             x_predict = x_predict_10,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$concavity_se[x_obs_idx_10],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_10])
-
-gaussian_fit_10 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_10, iter=2000, chains=1)
-```
-
-```{r}
-params_10 <- extract(gaussian_fit_10)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$concavity_se)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$concavity_se, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$concavity_se)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_10, params_10$y_predict[i, 1:100], col="orange")
-}
-```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_10$y_predict[i,]), col="cyan")
-  }
-```
-
-# Gaussian Model - symmetry_se
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_11 <- sort(sample(1:length(scaled_cancer_data$symmetry_se), N_obs))
-x_predict_11 <- seq(range(scaled_cancer_data$symmetry_se)[1],range(scaled_cancer_data$symmetry_se)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_11 <- list(N_predict = N_predict, 
-             x_predict = x_predict_11,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$symmetry_se[x_obs_idx_11],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_11])
-
-gaussian_fit_11 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_11, iter=2000, chains=1)
-```
-
-```{r}
-params_11 <- extract(gaussian_fit_11)
-```
-
-```{r}
-plot(c(range(scaled_cancer_data$symmetry_se)), c(-1,1.5), ty="n")
-points(scaled_cancer_data$symmetry_se, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$symmetry_se)), c(-1,1.5), ty="n")
-for (i in 1:3){
-  points(x_predict_11, params_11$y_predict[i, 1:100], col="orange")
-}
-```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_11$y_predict[i,]), col="cyan")
-  }
-```
-
-# Gaussian Model - fractal_dimension_se
-```{r}
-N_obs <- 200
-N_predict <- 100
-```
-
-```{r}
-x_obs_idx_12 <- sort(sample(1:length(scaled_cancer_data$fractal_dimension_se), N_obs))
-x_predict_12 <- seq(range(scaled_cancer_data$fractal_dimension_se)[1],range(scaled_cancer_data$fractal_dimension_se)[2],length.out=N_predict)
-```
-
-```{r}
-gaussian_data_12 <- list(N_predict = N_predict, 
-             x_predict = x_predict_12,
-             N_obs = N_obs,
-             x_obs = scaled_cancer_data$fractal_dimension_se[x_obs_idx_12],
-             y_obs = scaled_cancer_data$diagnosis[x_obs_idx_12])
-
-gaussian_fit_12 <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_data_12, iter=2000, chains=1)
-```
-
-```{r}
-params_12 <- extract(gaussian_fit_12)
-```
-
-```{r}
-#plot(c(range(scaled_cancer_data$fractal_dimension_se)), c(-1,1.5), ty="n")
-plot(c(-1,2), c(-1,1.5), ty="n")
-points(scaled_cancer_data$fractal_dimension_se, scaled_cancer_data$diagnosis, col="grey")
-#plot(c(range(scaled_cancer_data$fractal_dimension_se)), c(-1,1.5), ty="n")
-for (i in 1:1000){
-  points(x_predict_12, params_12$y_predict[i, 1:100], col="orange")
-}
-```
-
-
-```{r}
-# Compare the distribution of the data with the simulated one
-plot(density(scaled_cancer_data$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5))
-# Plot simulated data from 10 posterior draws
-for (i in 1:50){
-  lines(density(params_12$y_predict[i,]), col="cyan")
-  }
-```
-
-
 
 

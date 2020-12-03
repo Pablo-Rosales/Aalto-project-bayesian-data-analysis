@@ -33,7 +33,7 @@ transformed parameters {
   }
 }
 model {
-  rho ~ inv_gamma(5, 5);
+  rho ~ inv_gamma(1, 1);
   alpha ~ std_normal();
   a ~ std_normal();
   eta ~ std_normal();
@@ -42,7 +42,9 @@ model {
 }
 generated quantities {
   int y_predict[N_predict];
-  for (n_predict in 1:N_predict)
+  vector[N_predict] log_lik;
+  for (n_predict in 1:N_predict){
     y_predict[n_predict] = bernoulli_logit_rng(a + f[N_obs + n_predict]);
+    log_lik[n_predict] = bernoulli_logit_lpmf(y_obs[n_predict] | a + f[N_obs + n_predict]);
+  }
 }
-
