@@ -116,6 +116,13 @@ cancer_data = subset(cancer_data, select = -c(radius_mean, perimeter_mean,
                      perimeter_se, compactness_se, concave.points_se, 
                      radius_worst, perimeter_worst, compactness_worst, 
                      concave.points_worst))
+
+variables <- c("texture_mean", "area_mean", "smoothness_mean", "concavity_mean",
+               "symmetry_mean", "fractal_dimension_mean", "texture_se",
+               "area_se", "smoothness_se", "concavity_se", "symmetry_se",
+               "fractal_dimension_se", "texture_worst", "area_worst", 
+               "smoothness_worst", "concavity_worst", "symmetry_worst", 
+               "fractal_dimension_worst")
 ```
 
 By performing this feature selection, we drastically removed the number of variables, from 30 to 18. The final variables, along with the correlation, used for our models are as follows:
@@ -149,8 +156,7 @@ As a summary, our modeling idea has been to do the following analysis' with diff
 5. **Multivariate Model**, done with Regularized Horseshoe Prior with the best minimum optimal amount of variables, in order to check if the predictions obtained are equal or better than the model with all variables.
 6. **Gaussian Model**, ...
 
-# Methodology
-## Priors
+# Priors
 
 We have chosen to work with Weakly Informative Priors because:
 
@@ -168,7 +174,7 @@ with $\alpha$ and $\beta$ are the intercept and regression coefficients, $x$ are
 
 For the $\alpha$ intercept coefficient and $\beta$ regression coefficient we have chosen a Normal and a Student T distribution respectively, to be more precise:
 
-1. $\alpha \sim Normal(mu_{\alpha},\ \sigma_{\alpha})$, with $mu_{\alpha} = 0$ and $\sigma_{\alpha} = 1$.
+1. $\alpha \sim Normal(\mu_{\alpha},\ \sigma_{\alpha})$, with $\mu_{\alpha} = 0$ and $\sigma_{\alpha} = 1$.
 2. $\beta \sim StudentT(df_{\beta},\ location_{\beta},\ scale_{\beta})$, with $df_{\beta} = 3$, $location_{\beta} = 0$ and $scale_{\beta} = 1$.
 
 The reason behind this choice in priors is because we scale our data, so it makes sense to select a normal distribution with mean centered in 0 and standard deviation 1.
@@ -186,10 +192,12 @@ $$PONER LAS FORMULAS AQUI$$
 
 ```{r}
 p0 <- 3 # number of relevant variables
-tau0 <- p0 / (length(variables) - p0) * 1 / sqrt(nrow(scaled_cancer_data))
+tau0 <- p0 / (length(variables) - p0) * 1 / sqrt(nrows)
 rhs_prior <- hs(global_scale=tau0)
 ```
 
+
+# Models
 ## Linear Models
 
 ## Multivariate Models - Variable Blocks
