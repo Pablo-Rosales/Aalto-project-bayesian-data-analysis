@@ -455,7 +455,7 @@ Finally, we have obtained 0 divergences for all of our linear models.
 ### Regularized Horseshoe
 
 ## Gaussian Model Diagnostics
-In order to, visually, asses convergence of the gaussian model, the chains for the scalar parameters are plotted.
+In order to visually assess convergence of the gaussian model, the chains for the scalar parameters are plotted.
 ```{r}
 traceplot(gaussian_fits[[1]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 traceplot(gaussian_fits[[2]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
