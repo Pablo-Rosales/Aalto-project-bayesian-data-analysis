@@ -411,6 +411,22 @@ for (variable in variables_gaussian){
   gaussian_fits <- c(gaussian_fits, gaussian_fit)
 }
 ```
+Finally, an additional function for computing the accuracy of the model is implemented. The following function considers as accuracy the fraction of correctly labelled examples among all the predictions.
+```{r}
+accuracy_gaussian <- function(predictions, labels){
+  trues <- 0
+  falses <- 0
+  for (i in 1:length(predictions)){
+    if (predictions[i] == labels[i]){
+      trues = trues +1
+    }
+    else{
+      falses = falses +1
+    }
+  }
+  return(trues/(falses+trues))
+} 
+```
 
 # Convergence Diagnostics
 ## Diagnostic Metrics
@@ -694,7 +710,28 @@ for (i in 1:length(multivariate_glms)){
   print(accs[[2]])
 }
 ```
-
+In the case of the gaussian processes, making use of the implemented function, the obtained accuracies are computed as:
+```{r}
+accuracies <- c()
+for (j in 1:(length(gaussian_fits))){
+  accuracy_gaussian_sum <- 0
+  params_gaussian <- extract(gaussian_fits[[j]])
+  for (i in 1:(dim(params_gaussian$y_predict)[1])){
+    predictions <- params_gaussian$y_predict[i,1:N_predict]
+    labels <- test_set[,"diagnosis"][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]]
+    accuracy_gaussian_sum <- accuracy_gaussian(predictions, labels) + accuracy_gaussian_sum
+  }
+  accuracy_gaussian_mean <- accuracy_gaussian_sum/(dim(params_gaussian$y_predict)[1])
+  accuracies <- c(accuracies, accuracy_gaussian_mean)
+}
+```
+Yielding the following results:
+```{r}
+for (i in 1:length(variables_gaussian)){
+  cat("\nGaussian model accuracy for ", variables_gaussian[i], " is: ", round(accuracies[i],3))
+}
+```
+The results for the intermediate variables are not good at all. They improve for the first and last variable. However, they are far from the good results obtained with the other implemented models.
 
 
 # Conclusion
