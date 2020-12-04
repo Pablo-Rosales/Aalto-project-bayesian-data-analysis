@@ -417,18 +417,14 @@ multivariate_glms <- append(multivariate_glms, list(multivariate_rhsp))
 ## Gaussian Model
 The last model that was considered for this project was a Gaussian Process based model. Gaussian models provide a probability distribution over functions. They are useful for representing those datasets that cannot be easily adjusted to a line following a regression procedure. A gaussian process consists of generating higher degree polynomial functions and assigning to those functions a probability. Therefore, by taking the mean over the probability distribution, the most probable fit is obtained.
 
+### Stan code
+
 The common **stan code** for each variable is designed as follows:
 
 ```{r}
 writeLines(readLines("models/gaussian_process_bernoulli.stan"))
 ``` 
-
-
-$\linebreak$
-
 In order to later assess the performance of the gaussian model based on the quality of its predictions, the data set is divided into two subsets, one for "training" the model, containing a higher number of observations, and another one for "testing" the model.
-
-### Stan code
 
 ```{r}
 train_index <- sample(1:nrow(scaled_cancer_data), 0.8*nrow(scaled_cancer_data))
