@@ -59,7 +59,7 @@ As a summary, our modeling idea has been to do the following analysis' with diff
 3. **Multivariate Model**, done with all 18 features in order to obtain proper posterior checking, and see the minimum optimal amount of variables needed, and which ones, for equal or better prediction as this model with all 18 features.
 4. **Multivariate Model**, done with the best minimum optimal amount of variables, to check if the predictions obtained are equal or better than the model with all variables.
 5. **Multivariate Model**, done with Regularized Horseshoe Prior with the best minimum optimal amount of variables, in order to check if the predictions obtained are equal or better than the model with all variables.
-6. **Gaussian Model**, ...
+6. **Gaussian Model**, done with the four best variables obtained from applying the Multivariate model in order to compare the results of applying it to the dataset and check if it performs better with the selected variables than the considered alternatives. 
 
 # Exploratory Data Analysis
 
@@ -205,7 +205,19 @@ p_0 <- 3 # number of relevant variables
 tau_0 <- p_0 / (length(variables) - p_0) * 1 / sqrt(nrows)
 rhs_prior <- hs(global_scale = tau_0)
 ```
-
+## Gaussian Model
+Gaussian processes are parametrized by a mean vector and a covariance matrix. The chosen kernel for implementing the covariance is the exponentiated quadratic kernel, which depends on two hyperpriors, the length scale, $\rho$, and the marginal standard deviation $\alpha$. The latter measures the average distance from the mean function, while the former represents the frequency of the function.
+$$
+k(x|\alpha, \rho)_{ij} = \alpha^2 exp(\frac{-1}{2\rho^2}\sum_{d=1}^D(x_{i,d}-x_{j,d})^2)
+$$
+Hence, the priors and hyperpriors are as following:
+$$
+\rho \sim InvGamma(1,1) \\
+\alpha \sim Normal(0,1) \\
+a \sim Normal(0,1) \\
+\eta \sim Normal(0,1)
+$$
+Where the vector eta is added to increase the efficiency of the sampling.
 
 # Models
 Throughout this section, the designed modeling ideas will be presented in its respective subsection: explanation of the model and code.
@@ -405,6 +417,68 @@ multivariate_glms <- append(multivariate_glms, list(multivariate_rhsp))
 #get_stanmodel(multivariate_rhsp$stanfit)
 ```
 
+## Gaussian Model
+The last model that was considered for this project was a Gaussian Process based model. Gaussian models provide a probability distribution over functions. They are useful for representing those datasets that cannot be easily adjusted to a line following a regression procedure. A gaussian process consists of generating higher degree polynomial functions and assigning to those functions a probability. Therefore, by taking the mean over the probability distribution, the most probable fit is obtained.
+
+$\linebreak$
+
+In order to later assess the performance of the gaussian model based on the quality of its predictions, the data set is divided into two subsets, one for "training" the model, containing a higher number of observations, and another one for "testing" the model.
+
+### Stan code
+
+```{r}
+train_index <- sample(1:nrow(scaled_cancer_data), 0.8*nrow(scaled_cancer_data))
+test_index <- setdiff(1:nrow(scaled_cancer_data), train_index)
+
+train_set <-scaled_cancer_data[train_index, ]
+test_set <- scaled_cancer_data[test_index, ]
+```
+
+The gaussian model was carried out over the four best variables contained in the set of optimal variables obtained using the previous models.
+```{r}
+variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean", 
+                        "area_mean")
+gaussian_fits <- c()
+x_predicts_idx <- c()
+N_obs <- 200
+N_predict <- 100
+gaussian_model <- rstan::stan_model(file = "models/gaussian_process_bernoulli.stan")
+```
+
+From the training set, 200 randomly selected observations are considered. Gaussian models are computationally slow, hence, using the total number of observations would take much time. From the test set, 100 observations are chosen, also randomly.
+```{r}
+for (variable in variables_gaussian){
+  cat("\nSampling from model with variable: ", variable, "\n")
+  x_obs_idx <- sort(sample(1:length(train_set[,variable]), N_obs))
+  x_predict_idx <- sort(sample(1:length(test_set[,variable]), N_predict))
+  x_predicts_idx <- c(x_predicts_idx, x_predict_idx)
+  gaussian_model_data <- list(N_predict = N_predict,
+                              x_predict = test_set[,variable][x_predict_idx],
+                              N_obs = N_obs,
+                              x_obs = train_set[,variable][x_obs_idx],
+                              y_obs = train_set[,"diagnosis"][x_obs_idx])
+  
+  gaussian_fit <-rstan::sampling(gaussian_model, data = gaussian_model_data,
+                                 iter=1000, chains=2, refresh=0)
+  gaussian_fits <- c(gaussian_fits, gaussian_fit)
+}
+```
+Finally, an additional function for computing the accuracy of the model is implemented. The following function considers as accuracy the fraction of correctly labelled examples among all the predictions.
+```{r}
+accuracy_gaussian <- function(predictions, labels){
+  trues <- 0
+  falses <- 0
+  for (i in 1:length(predictions)){
+    if (predictions[i] == labels[i]){
+      trues = trues +1
+    }
+    else{
+      falses = falses +1
+    }
+  }
+  return(trues/(falses+trues))
+} 
+```
 
 # Convergence Diagnostics
 ## Diagnostic Metrics
@@ -429,6 +503,16 @@ ESCRIBIR AQUI SOBRE TODO EN UN MISMO APARTADO
 
 Escribir que se ha aumentado el numero de cadenas,iteraciones y adapt_delta. Escribir el porque
 
+## Gaussian Model Diagnostics
+In order to visually assess convergence of the gaussian model, the chains for the scalar parameters are plotted.
+```{r}
+traceplot(gaussian_fits[[1]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+traceplot(gaussian_fits[[2]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+traceplot(gaussian_fits[[3]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+traceplot(gaussian_fits[[4]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
+```
+
+As in previous cases, the values obtained from applying the function `monitor`are satisfactory. $\hat{R}$ provides a valid scalar metric for convergence checking based on computing the division between the pooled variance of the chains and the individual variance of each of them. Obtaining values close to 1, as in the current case, means that the chains happen to have very similar distributions. Finally, the results yielded for the effective sample size are higher than 100.
 
 # Posterior Predictive Checking
 ## Linear Models
@@ -500,6 +584,34 @@ bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]]),
                subtitles = c("Three Variables Model"))
 bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]]), 
                subtitles = c("RHS Model"))
+```
+
+## Gaussian Model
+The density of the diagnosis in the test set is printed in black color. Overlapping, the densities for the predictions of the first 50 iterations. This graph enables visual assessment of the quality of the predictions. Preliminarly, the results seem to be satisfactory.
+```{r}
+layout(mat = matrix(c(1,2,3,4), nrow = 2, ncol = 2),heights = c(1, 1,1,1), widths = c(1,1,1,1))
+for (j in 1:(length(gaussian_fits))){
+  params_gaussian <- extract(gaussian_fits[[j]])
+  plot(density(test_set$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), main=variables_gaussian[j], ylab="density", xlab="", lwd=3)
+  for (i in 1:50){
+  lines(density(params_gaussian$y_predict[i,]), col="cyan")
+  }
+}
+```
+
+Another way to check if the predicted samples represent the reality is by directly plotting them (orange) and comparing with the target ones (grey). This is possible because the gaussian model is applied on values that are contained in the test set for the chosen variable. The concentration of points at 0 or 1 *y* values should be similar for the same values of *x*. In the given cases, by looking at the graphs, there is a very similar tendency between the real values and the simulated ones, meaning that the result is good.
+```{r}
+for (j in 1:(length(gaussian_fits))){
+  params_gaussian <- extract(gaussian_fits[[j]])
+  layout(mat = matrix(c(1,2), nrow = 1, ncol = 2),heights = c(1, 1), widths = c(1,1))
+  plot(c(range(test_set[,variables_gaussian[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]])), c(-1,1.5), ty="n", main = variables_gaussian[j], xlab = variables_gaussian[j], ylab = "diagnosis")
+  points(test_set[,variables_gaussian[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], test_set[,"diagnosis"][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], col="grey", cex=1, pch=19)
+  #points(scaled_cancer_data[,variables_gaussian[j]], scaled_cancer_data$diagnosis, col="grey")
+  plot(c(range(test_set[,variables_gaussian[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]])), c(-1,1.5), ty="n", main = variables_gaussian[j], xlab = variables_gaussian[j], ylab = "predicted diagnosis")
+  for (i in 1:3){
+    points(test_set[,variables_gaussian[j]][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]], params_gaussian$y_predict[i, 1:N_predict], col="orange", pch=3, cex=1)
+  }
+}
 ```
 
 # Model comparisons
@@ -626,6 +738,41 @@ p[5]
 p[6]
 ```
 
+## Gaussian Model
+When fitting the gaussian model with the four "optimal" variables, the results of the Pareto k values are, in general, good. However, for those variables for which the model yields a higher accuracy, the k values are larger, in some occasions, over 0.7. This might be representative of a model which is optimistically biased.
+```{r}
+pareto_k_values <- list()
+linear_loo_estimates_df <- data.frame()
+
+for (j in 1:(length(gaussian_fits))){
+  cat("-Monitoring variable: ", variables_gaussian[j], "\n")
+  model <- gaussian_fits[[j]]
+  model_log_lik <- extract_log_lik(model, parameter_name="log_lik", merge_chains=FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  
+  aux_df <- data.frame("variable" = variables_gaussian[j], "elpd_loo" = model_loo$estimates[1], "p_loo" = model_loo$estimates[2])
+  linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
+}
+
+cat("-- Gaussian Model Comparison")
+print(linear_loo_estimates_df)
+```
+
+```{r}
+p <- list()
+for (i in 1:length(pareto_k_values)){
+  df <- data.frame(pareto_k_values[[i]])
+  colnames(df) <- c("values")
+  p[[i]] <- ggplot(data=df, aes(y=values, x=1:N_predict)) +
+    geom_point(color="#10A5F5") +
+    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
+    ggtitle(variables_gaussian[i]) +  xlab("Samples") + ylab("K-values")
+}
+do.call(grid.arrange, c(p[1:4], ncol=2, nrow=2))
+```
+
 # Predictive Performance Assessment
 In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
 
@@ -639,7 +786,28 @@ for (i in 1:length(multivariate_glms)){
   print(accs[[2]])
 }
 ```
-
+In the case of the gaussian processes, making use of the implemented function, the obtained accuracies are computed as:
+```{r}
+accuracies <- c()
+for (j in 1:(length(gaussian_fits))){
+  accuracy_gaussian_sum <- 0
+  params_gaussian <- extract(gaussian_fits[[j]])
+  for (i in 1:(dim(params_gaussian$y_predict)[1])){
+    predictions <- params_gaussian$y_predict[i,1:N_predict]
+    labels <- test_set[,"diagnosis"][x_predicts_idx[((j-1)*N_predict+1):(j*N_predict)]]
+    accuracy_gaussian_sum <- accuracy_gaussian(predictions, labels) + accuracy_gaussian_sum
+  }
+  accuracy_gaussian_mean <- accuracy_gaussian_sum/(dim(params_gaussian$y_predict)[1])
+  accuracies <- c(accuracies, accuracy_gaussian_mean)
+}
+```
+Yielding the following results:
+```{r}
+for (i in 1:length(variables_gaussian)){
+  cat("\nGaussian model accuracy for ", variables_gaussian[i], " is: ", round(accuracies[i],3))
+}
+```
+The results for the intermediate variables are not good at all. They improve for the first and last variable. However, they are far from the good results obtained with the other implemented models.
 
 
 # Conclusion
@@ -724,8 +892,35 @@ for (i in 1:length(multivariate_glms)){
 
 ## Appendix C - Gaussian model
 
-
-## Appendix C - Gaussian model
+### Monitor
+Monitor output has been omitted for convenience, only relevant variables (Rhat, Bulk_ESS and Tail_ESS) are shown.
+```{r}
+for (i in 1:length(gaussian_fits)){
+  cat("\nMonitor for model variable:", variables_gaussian[i], '\n')
+  cat("-------------------------\n")
+  model_mon <- monitor(gaussian_fits[[i]], print=FALSE)
+  rhat_rho <- round(model_mon$Rhat[1], 3)
+  rhat_alpha <- round(model_mon$Rhat[2], 3)
+  rhat_a <- round(model_mon$Rhat[3], 3)
+  rhat_eta <- round(mean(model_mon$Rhat[4:(N_predict+N_obs)]), 3)
+  
+  bulk_rho <- round(model_mon$Bulk_ESS[1], 3)
+  bulk_alpha <- round(model_mon$Bulk_ESS[2], 3)
+  bulk_a <- round(model_mon$Bulk_ESS[3], 3)
+  bulk_eta <- round(mean(model_mon$Bulk_ESS[4:N_predict+N_obs]), 3)
+  
+  tail_rho <- round(model_mon$Tail_ESS[1], 3)
+  tail_alpha <- round(model_mon$Tail_ESS[2], 3)
+  tail_a <- round(model_mon$Tail_ESS[3], 3)
+  tail_eta <- round(mean(model_mon$Tail_ESS[4:N_predict+N_obs]), 3)
+  
+  
+  cat("Rhat of rho, alpha, a and eta:", rhat_rho, rhat_alpha, rhat_a, rhat_eta, '\n')
+  cat("Bulk_ESS for rho, alpha, a and eta:", bulk_rho, bulk_alpha, bulk_a, bulk_eta, '\n')
+  cat("Tail_ESS for rho, alpha, a and eta:", tail_rho, tail_alpha, tail_a, tail_eta, '\n')
+  
+}
+```
 
 
 
