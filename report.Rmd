@@ -206,7 +206,18 @@ tau_0 <- p_0 / (length(variables) - p_0) * 1 / sqrt(nrows)
 rhs_prior <- hs(global_scale = tau_0)
 ```
 ## Gaussian Model
-Gaussian processes are parametrized by a mean vector and a covariance matrix. The kernel that yields the covariance matrix depends on two hyperpriors, the length scale, $\rho$, and the marginal standard deviation $\alpha$. The mean vector prior was characterized by a standard normal distribution, as well as the other parameters, except for the length scale, which samples from an inverse gamma distribution.
+Gaussian processes are parametrized by a mean vector and a covariance matrix. The chosen kernel for implementing the covariance is the exponentiated quadratic kernel, which depends on two hyperpriors, the length scale, $\rho$, and the marginal standard deviation $\alpha$. The latter measures the average distance from the mean function, while the former represents the frequency of the function.
+$$
+k(x|\alpha, \rho)_{ij} = \alpha^2 exp(\frac{-1}{2\rho^2}\sum_{d=1}^D(x_{i,d}-x_{j,d})^2)
+$$
+Hence, the priors and hyperpriors are as following:
+$$
+\rho \sim InvGamma(1,1) \\
+\alpha \sim Normal(0,1) \\
+a \sim Normal(0,1) \\
+\eta \sim Normal(0,1)
+$$
+Where the vector eta is added to increase the efficiency of the sampling.
 
 # Models
 Throughout this section, the designed modeling ideas will be presented in its respective subsection: explanation of the model, code, analysis and diagnostics.
