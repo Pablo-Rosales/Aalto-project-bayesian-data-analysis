@@ -242,54 +242,7 @@ for (variable in variables){
 ```
 
 
-### Model comparisons
 
-By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variables for the Linear Model for posterior model comparison.
-
-Most of the models have exceptional k-values (lower than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `area_worst`, `area_mean`, `area_se`, `concavity_mean`.
-
-```{r}
-pareto_k_values <- list()
-linear_loo_estimates_df <- data.frame()
-
-for (i in (1:length(linear_models))){
-  cat("- Monitoring variable: ", variables[i], "\n")
-  model <- linear_models[[i]]
-  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik",
-                                   merge_chains = FALSE)
-  model_r_eff <- relative_eff(exp(model_log_lik))
-  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
-  pareto_k_values <- append(pareto_k_values,
-                            list(model_loo$diagnostics$pareto_k))
-
-  aux_df <- data.frame("variable" = variables[i],
-                       "elpd_loo" = model_loo$estimates[1],
-                       "p_loo" = model_loo$estimates[2])
-
-  linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
-}
-
-print(linear_loo_estimates_df)
-```
-
-The following output visualizes the Pareto-k values for each linear model.
-
-```{r}
-p <- list()
-for (i in 1:length(pareto_k_values)){
-  df <- data.frame(pareto_k_values[[i]])
-  colnames(df) <- c("values")
-  p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) +
-    geom_point(color="#10A5F5") +
-    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
-    ggtitle(variables[i]) +  xlab("Samples") + ylab("K-values")
-}
-do.call(grid.arrange, c(p[1:4], ncol=2))
-do.call(grid.arrange, c(p[5:8], ncol=2))
-do.call(grid.arrange, c(p[9:12], ncol=2))
-do.call(grid.arrange, c(p[13:16], ncol=2))
-do.call(grid.arrange, c(p[17:18], ncol=2))
-```
 
 ## Multivariate Model - Variable Blocks
 
@@ -298,6 +251,19 @@ Followed by the analysis done for each of the variables, it was decided to creat
 ### Stan code
 
 ```{r}
+# Auxiliary function to calculate the accuracy of a model
+model_accuracies <- function(model){
+  y_pred <- posterior_epred(model)
+  preds <- colMeans(y_pred)
+  predicted <- predict(model, newdata=scaled_cancer_data, type='response')
+  
+  pr <- as.integer(preds >= 0.5)
+  acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
+  
+  conf_matrix <- confusionMatrix(factor(round(predicted)), factor(scaled_cancer_data$diagnosis))
+  return (list(acc, list(conf_matrix)))
+}
+
 writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
 linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
 ```
@@ -310,26 +276,21 @@ The following code draws samples from the defined stan model. Each iteration per
 Additionally to the `rstan::sampling` models obtained, the same models were fitted with `stan_glm`, in order to be able to make use of functions that need the input to be a stan_glm object. Both types of model objects have been saved for posteriority, for obtaining the needed diagnostics.
 
 ```{r}
-# Auxiliary function to calculate the accuracy of a model
-model_accuracies <- function(model){
-  y_pred <- posterior_epred(model)
-  preds <- colMeans(y_pred)
-  prueba <- predict(model, newdata=scaled_cancer_data, type='response')
-  
-  pr <- as.integer(preds >= 0.5)
-  acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
-  
-  conf_matrix <- confusionMatrix(factor(round(prueba)),factor(scaled_cancer_data$diagnosis))
-  return (c(acc, conf_matrix))
-}
-
-
 mv_mean_block <- list("texture_mean", "area_mean", "smoothness_mean",
-                      "concavity_mean", "symmetry_mean", "fractal_dimension_mean")
+                      "concavity_mean", "symmetry_mean", 
+                      "fractal_dimension_mean")
+
 mv_se_block <- list("texture_se", "area_se", "smoothness_se", "concavity_se",
                        "symmetry_se", "fractal_dimension_se")
+
 mv_worst_block <- list("texture_worst", "area_worst", "smoothness_worst",
-                       "concavity_worst", "symmetry_worst", "fractal_dimension_worst")
+                       "concavity_worst", "symmetry_worst", 
+                       "fractal_dimension_worst")
+
+mv_model_names <- c("Mean Model", "SE Model", "Worst Model", 
+                    "Full Variables Model", "Three variables Model", 
+                    "RHS Model")
+
 mv_var_block <- list(mv_mean_block, mv_se_block, mv_worst_block)
 
 multivariate_models <- c()
@@ -360,69 +321,53 @@ for (i in (1:3)){
 }
 ```
 
-### Model comparisons
-
-By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variable blocks for the Multivariate Model for posterior model comparison.
-
-All of the models have relatively exceptional k-values (lower than 0.7), with a few high exceptions (equal or higher than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `worst block`, `mean block` and `se block`.
-
-What we take out of this analysis by variable blocks is that, in general, the `se` variables might not be as influential for predictions as the other blocks. Although this analysis did not bring a more specific result, it was an interesting experiment to carry out in order to check if any of the variable blocks might influence too badly the final model.
-
-Finally, it **must** be mentioned that the difference in prediction accuracy OF the `se block` and the `mean block` are ... .
+## Multivariate Model - Full Model
 
 ```{r}
-pareto_k_values <- list()
-multivariate_loo_estimates_df <- data.frame()
-mv_model_names <- c("mean", "se", "worst")
-
-for (i in (1:length(multivariate_models))){
-  cat("- Monitoring variable group: ", mv_model_names[i], "\n")
-  model <- multivariate_models[[i]]
-  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
-  model_r_eff <- relative_eff(exp(model_log_lik))
-  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
-  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
-  
-  accs <- model_accuracies(model = multivariate_glms[[i]])
-  
-  aux_df <- data.frame("variable group" = mv_model_names[i],
-                       "elpd_loo" = model_loo$estimates[1],
-                       "p_loo" = model_loo$estimates[2],
-                       "accuracy" = accs[1])
-  
-  multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
-}
-
-print(multivariate_loo_estimates_df)
+multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
+                              + symmetry_mean + fractal_dimension_mean
+                              + texture_se + area_se + smoothness_se + concavity_se
+                              + symmetry_se + fractal_dimension_se
+                              + texture_worst + area_worst + smoothness_worst + concavity_worst
+                              + symmetry_worst + fractal_dimension_worst,
+                              data = scaled_cancer_data,
+                              family = binomial(link = "logit"), 
+                              prior = beta, prior_intercept = alpha, QR=TRUE,
+                              seed = SEED, refresh=0)
+multivariate_glms <- append(multivariate_glms, list(multivariate_full))
 ```
+
+## Multivariate Model - Three Variables Model
 
 ```{r}
-p <- list()
-block_name <- c("mean block", "se block", "worst block")
-for (i in 1:length(pareto_k_values)){
-  df <- data.frame(pareto_k_values[[i]])
-  colnames(df) <- c("values")
-  p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) +
-    geom_point(color="#10A5F5") +
-    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
-    ggtitle(block_name[i]) +  xlab("Samples") + ylab("K-values")
-}
-
-p[1]
-p[2]
-p[3]
+multivariate_three <- stan_glm(diagnosis ~ area_worst + smoothness_worst + texture_mean,
+                               data = scaled_cancer_data,
+                               family = binomial(link = "logit"), 
+                               prior = beta, prior_intercept = alpha,
+                               seed = SEED, refresh=0)
+multivariate_glms <- append(multivariate_glms, list(multivariate_three))
 ```
 
+## Multivariate Model - Regularized Horseshoe Model
 
-
-
-
-
+```{r}
+multivariate_rhsp <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
+                              + symmetry_mean + fractal_dimension_mean
+                              + texture_se + area_se + smoothness_se + concavity_se
+                              + symmetry_se + fractal_dimension_se
+                              + texture_worst + area_worst + smoothness_worst + concavity_worst
+                              + symmetry_worst + fractal_dimension_worst,
+                              data = scaled_cancer_data,
+                              family = binomial(link = "logit"),
+                              prior=rhs_prior, QR=TRUE,
+                              seed = SEED, refresh=0)
+multivariate_glms <- append(multivariate_glms, list(multivariate_rhsp))
+```
 
 
 # Convergence Diagnostics
 ## Diagnostic Metrics
-INTRODUCCION MEJOR A ESTO
+The aim of this section is to assess the convergence of our models using a variety of diagnostics:
 
 $\hat{R}$ can be used to monitor if a group of chains has converged to the target distribution. This can be done by comparing the between and within-chain estimate for model parameters. If chains have not converged, meaning that they have not mixed well, $\hat{R}$ will be greater than one. If chains have converged, the $\hat{R}$ value will be virtually one.
 
@@ -510,35 +455,124 @@ bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), subt
 bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), subtitles = c("worst block"))
 ```
 
+# Model comparisons
+## Linear Models
+By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variables for the Linear Model for posterior model comparison.
+
+Most of the models have exceptional k-values (lower than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `area_worst`, `area_mean`, `area_se`, `concavity_mean`.
+
+```{r}
+pareto_k_values <- list()
+linear_loo_estimates_df <- data.frame()
+
+for (i in (1:length(linear_models))){
+  cat("- Monitoring variable: ", variables[i], "\n")
+  model <- linear_models[[i]]
+  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik",
+                                   merge_chains = FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values,
+                            list(model_loo$diagnostics$pareto_k))
+
+  aux_df <- data.frame("variable" = variables[i],
+                       "elpd_loo" = model_loo$estimates[1],
+                       "p_loo" = model_loo$estimates[2])
+
+  linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
+}
+
+print(linear_loo_estimates_df)
+```
+
+The following output visualizes the Pareto-k values for each linear model.
+
+```{r}
+p <- list()
+for (i in 1:length(pareto_k_values)){
+  df <- data.frame(pareto_k_values[[i]])
+  colnames(df) <- c("values")
+  p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) +
+    geom_point(color="#10A5F5") +
+    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
+    ggtitle(variables[i]) +  xlab("Samples") + ylab("K-values")
+}
+do.call(grid.arrange, c(p[1:4], ncol=2))
+do.call(grid.arrange, c(p[5:8], ncol=2))
+do.call(grid.arrange, c(p[9:12], ncol=2))
+do.call(grid.arrange, c(p[13:16], ncol=2))
+do.call(grid.arrange, c(p[17:18], ncol=2))
+```
+## Multivariate Models
+### Blocks
+
+By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variable blocks for the Multivariate Model for posterior model comparison.
+
+All of the models have relatively exceptional k-values (lower than 0.7), with a few high exceptions (equal or higher than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `worst block`, `mean block` and `se block`.
+
+What we take out of this analysis by variable blocks is that, in general, the `se` variables might not be as influential for predictions as the other blocks. Although this analysis did not bring a more specific result, it was an interesting experiment to carry out in order to check if any of the variable blocks might influence too badly the final model.
+
+Finally, it **must** be mentioned that the difference in prediction accuracy OF the `se block` and the `mean block` are ... .
+
+```{r}
+pareto_k_values <- list()
+multivariate_loo_estimates_df <- data.frame()
+
+for (i in (1:length(multivariate_models))){
+  cat("- Monitoring variable group: ", mv_model_names[i], "\n")
+  model <- multivariate_models[[i]]
+  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
+  model_r_eff <- relative_eff(exp(model_log_lik))
+  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  
+  accs <- model_accuracies(model = multivariate_glms[[i]])
+  
+  aux_df <- data.frame("variable group" = mv_model_names[i],
+                       "elpd_loo" = model_loo$estimates[1],
+                       "p_loo" = model_loo$estimates[2],
+                       "accuracy" = accs[1])
+  
+  multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
+}
+
+print(multivariate_loo_estimates_df)
+```
+
+```{r}
+p <- list()
+block_name <- c("mean block", "se block", "worst block")
+for (i in 1:length(pareto_k_values)){
+  df <- data.frame(pareto_k_values[[i]])
+  colnames(df) <- c("values")
+  p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) +
+    geom_point(color="#10A5F5") +
+    geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
+    ggtitle(block_name[i]) +  xlab("Samples") + ylab("K-values")
+}
+
+p[1]
+p[2]
+p[3]
+```
+
+### Full Model
+
+### Three Variables
+
+### Regularized Horseshoe
+
 # Predictive Performance Assessment
 In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
 
 [Decir si los valores predicción, sensitvity y specificity son buenos]
 
-## Blocks
 ```{r}
-for (model in multivariate_glms){
-  accs <- model_accuracies(model = model)
+for (i in 1:length(multivariate_glms)){
+  accs <- model_accuracies(model = multivariate_glms[[i]])
+  print(mv_model_names[i])
   print(accs[[2]])
 }
-```
-
-## Full Model
-```{r}
-accs <- model_accuracies(model = multivariate_full)
-print(accs[[2]])
-```
-
-## Three Variables
-```{r}
-accs <- model_accuracies(model = multivariate_three)
-print(accs[[2]])
-```
-
-## Regularized Horseshoe
-```{r}
-accs <- model_accuracies(model = multivariate_rhsp)
-print(accs[[2]])
 ```
 
 
@@ -593,6 +627,37 @@ for (i in (1:length(linear_models))){
 
 
 ## Appendix B - Multivariate models
+### Monitor
+Monitor output has been omitted for convenience, only relevant variables (Rhat, Bulk_ESS and Tail_ESS) are shown.
+
+```{r}
+for (i in 1:length(multivariate_glms)){
+  cat("\nMonitor for multivariate model:", mv_model_names[i], '\n')
+  cat("-------------------------\n")
+  model_mon <- monitor(multivariate_glms[[i]]$stanfit, print=FALSE)
+  rhat_alpha <- round(model_mon$Rhat[1], 3)
+  rhat_beta <- round(model_mon$Rhat[2], 3)
+  bulk_alpha <- round(model_mon$Bulk_ESS[1], 3)
+  bulk_beta <- round(model_mon$Bulk_ESS[2], 3)
+  tail_alpha <- round(model_mon$Tail_ESS[1], 3)
+  tail_beta <- round(model_mon$Tail_ESS[2], 3)
+  cat("Rhat of alpha and beta:", rhat_alpha, rhat_beta, '\n')
+  cat("Bulk_ESS for alpha and beta:", bulk_alpha, bulk_beta, '\n')
+  cat("Tail_ESS for alpha and beta:", tail_alpha, tail_beta, '\n')
+  
+}
+```
+### Divergences
+```{r}
+for (i in 1:length(multivariate_models)){
+ cat("Checking divergences for multivariate model:", mv_model_names[i], '\n')
+ cat("-------------------------\n")
+ check_hmc_diagnostics(multivariate_models[[i]])
+}
+```
+
+## Appendix C - Gaussian model
+
 
 ## Appendix C - Gaussian model
 
