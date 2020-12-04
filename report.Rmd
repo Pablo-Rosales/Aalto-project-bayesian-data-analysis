@@ -208,13 +208,15 @@ rhs_prior <- hs(global_scale = tau_0)
 
 
 # Models
-Throughout this section, the designed modeling ideas will be presented in its respective subsection: explanation of the model, code, analysis and diagnostics.
+Throughout this section, the designed modeling ideas will be presented in its respective subsection: explanation of the model and code.
 
 ## Linear Models
 Per each variable contained in the data set, a separate linear model is created in order to observe its efficiency and relevance.
 
 ### Stan code
-The general **stan code** is designed as follows:
+
+The common **stan code** for each variable is designed as follows:
+
 ```{r}
 writeLines(readLines("models/linear_model_bernoulli.stan"))
 linear_model <- rstan::stan_model(file = "models/linear_model_bernoulli.stan")
@@ -222,7 +224,8 @@ linear_model <- rstan::stan_model(file = "models/linear_model_bernoulli.stan")
 As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta \sim StudentT(3,0,1)$ for the regression coefficient. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
 
 ### Sampling
-The following code draws samples from the defined stan model. Each iteration pertains to a variable of the data set ('texture_mean', 'area_mean', etc...) contained in `variables` variable.
+
+The following code draws samples from the defined stan model. Each iteration pertains to a variable of the data set ('texture_mean', 'area_mean', etc...) contained in `variables` variable. Additionally to each of the variables, the sampling also receives as input the number `N` of observations of the dataset and the binary target value (diagnosis) for each of the observations.
 
 ```{r}
 linear_models <- c()
@@ -241,29 +244,15 @@ for (variable in variables){
 }
 ```
 
-
-
-
 ## Multivariate Model - Variable Blocks
 
 Followed by the analysis done for each of the variables, it was decided to create three separate multivariate models, one for each variable block (type of variable): **mean**, **se** and **worst**. This was done in order to observe the efficiency and relevance over the type of the variable and see if some of the measure blocks shouldn't be considered when making the diagnosis.
 
 ### Stan code
 
-```{r}
-# Auxiliary function to calculate the accuracy of a model
-model_accuracies <- function(model){
-  y_pred <- posterior_epred(model)
-  preds <- colMeans(y_pred)
-  predicted <- predict(model, newdata=scaled_cancer_data, type='response')
-  
-  pr <- as.integer(preds >= 0.5)
-  acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
-  
-  conf_matrix <- confusionMatrix(factor(round(predicted)), factor(scaled_cancer_data$diagnosis))
-  return (list(acc, list(conf_matrix)))
-}
+The common **stan code** used for Variable Blocks is designed as follows:
 
+```{r}
 writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
 linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
 ```
@@ -271,7 +260,8 @@ linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_m
 As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
 
 ### Sampling
-The following code draws samples from the defined stan model. Each iteration pertains to a variable block ('mean', 'se' and 'worst'), comprised of 6 variables for each of them ('texture', 'area', 'smoothness', 'concavity', 'symmetry', 'fractal_dimension'), which are passed as predictors to the model.
+
+The following code draws samples from the defined stan model. Each iteration pertains to a variable block ('mean', 'se' and 'worst'), comprised of 6 variables for each of them ('texture', 'area', 'smoothness', 'concavity', 'symmetry', 'fractal_dimension'), which are passed as predictors to the model. Additionally to each of the variable blocks, the sampling also receives as input the number `N` of observations of the dataset and the binary target value (diagnosis) for each of the observations.
 
 Additionally to the `rstan::sampling` models obtained, the same models were fitted with `stan_glm`, in order to be able to make use of functions that need the input to be a stan_glm object. Both types of model objects have been saved for posteriority, for obtaining the needed diagnostics.
 
@@ -323,6 +313,10 @@ for (i in (1:3)){
 
 ## Multivariate Model - Full Model
 
+Followed by the analysis done for each of the variables, it was decided to create three separate multivariate models, one for each variable block (type of variable): **mean**, **se** and **worst**. This was done in order to observe the efficiency and relevance over the type of the variable and see if some of the measure blocks shouldn't be considered when making the diagnosis.
+
+
+
 ```{r}
 multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
                               + symmetry_mean + fractal_dimension_mean
@@ -332,9 +326,42 @@ multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_
                               + symmetry_worst + fractal_dimension_worst,
                               data = scaled_cancer_data,
                               family = binomial(link = "logit"), 
-                              prior = beta, prior_intercept = alpha, QR=TRUE,
-                              seed = SEED, refresh=0)
+                              prior = beta, prior_intercept = alpha, QR=TRUE, 
+                              adapt_delta=0.9999, iter=5000,
+                              seed=SEED, refresh=0)
 multivariate_glms <- append(multivariate_glms, list(multivariate_full))
+```
+
+As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
+
+### Sampling
+
+The following code draws samples from the defined stan model. Each iteration pertains to a variable block ('mean', 'se' and 'worst'), comprised of 6 variables for each of them ('texture', 'area', 'smoothness', 'concavity', 'symmetry', 'fractal_dimension'), which are passed as predictors to the model. Additionally to each of the variable blocks, the sampling also receives as input the number `N` of observations of the dataset and the binary target value (diagnosis) for each of the observations.
+
+Additionally to the `rstan::sampling` models obtained, the same models were fitted with `stan_glm`, in order to be able to make use of functions that need the input to be a stan_glm object. Both types of model objects have been saved for posteriority, for obtaining the needed diagnostics.
+
+```{r}
+#get_stanmodel(multivariate_full$stanfit)
+```
+
+### Coefficient Marginal posteriors
+
+```{r}
+mcmc_areas(as.matrix(multivariate_full))
+```
+
+### Solution Terms
+
+PONER AQUI LOS SOLUTION TERMS
+
+PONER AQUI EL PLOT DE VARIABLES
+
+```{r}
+refmodel <- get_refmodel(multivariate_full)
+vs <- cv_varsel(refmodel, method = "forward", cv_method = 'LOO',
+                         nloo = nrow(scaled_cancer_data))
+solution_terms(vs)
+plot(vs, stats = c('elpd', 'rmse'))
 ```
 
 ## Multivariate Model - Three Variables Model
@@ -347,6 +374,14 @@ multivariate_three <- stan_glm(diagnosis ~ area_worst + smoothness_worst + textu
                                seed = SEED, refresh=0)
 multivariate_glms <- append(multivariate_glms, list(multivariate_three))
 ```
+
+### Stan Code
+
+```{r}
+#get_stanmodel(multivariate_three$stanfit)
+```
+
+
 
 ## Multivariate Model - Regularized Horseshoe Model
 
@@ -364,6 +399,12 @@ multivariate_rhsp <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_
 multivariate_glms <- append(multivariate_glms, list(multivariate_rhsp))
 ```
 
+### Stan Code
+
+```{r}
+#get_stanmodel(multivariate_rhsp$stanfit)
+```
+
 
 # Convergence Diagnostics
 ## Diagnostic Metrics
@@ -371,7 +412,7 @@ The aim of this section is to assess the convergence of our models using a varie
 
 $\hat{R}$ can be used to monitor if a group of chains has converged to the target distribution. This can be done by comparing the between and within-chain estimate for model parameters. If chains have not converged, meaning that they have not mixed well, $\hat{R}$ will be greater than one. If chains have converged, the $\hat{R}$ value will be virtually one.
 
-We would like to have a diagnostic that tell us when the weights are problematic, as we could have vastly imbalanced weights. In this case, we could use **effective sample size ($S_{eff}$)**, a quantitative measure of efficiency in **importance sampling**. $S_{eff}$ represents the number of independent samples required to obtain an importance sampling estimate with about the same efficiency as if we would have used all the samples.
+We would like to have a diagnostic that tells us when the weights are problematic, as we could have vastly imbalanced weights. In this case, we could use **effective sample size ($S_{eff}$)**, a quantitative measure of efficiency in **importance sampling**. $S_{eff}$ represents the number of independent samples required to obtain an importance sampling estimate with about the same efficiency as if we would have used all the samples.
 
 A divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value. To evaluate this, we can use the function `check_hmc_diagnostics`.
 
@@ -383,13 +424,10 @@ The `monitor` function gives us two crude measures of effective sample size call
 Finally, we have obtained 0 divergences for all of our linear models.
 
 ## Multivariate Model Diagnostics
-### Blocks
 
-### Full Model
+ESCRIBIR AQUI SOBRE TODO EN UN MISMO APARTADO
 
-### Three Variables
-
-### Regularized Horseshoe
+Escribir que se ha aumentado el numero de cadenas,iteraciones y adapt_delta. Escribir el porque
 
 
 # Posterior Predictive Checking
@@ -430,29 +468,38 @@ bayesplot_grid(ppc5, ppc6, ppc7, ppc8,
 bayesplot_grid(ppc9, ppc10, ppc11, ppc12,
                subtitles = c("smoothness_se", "concavity_se", "symmetry_se",
                              "fractal_dimension_se"))
-bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles = 
-                 c("smoothness_worst", "concavity_worst", "smoothness_worst", 
+bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles =
+                 c("smoothness_worst", "concavity_worst", "smoothness_worst",
                    "concavity_worst"))
-bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst", 
+bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst",
                                            "fractal_dimension_worst"))
 
 ```
 
 ## Multivariate Models
-### Blocks
 
 In the posterior predictive checking for each of the variable blocks, it is noticeable how much less the `se` block can influence the fitting of the model and thus getting better predictive results with these variables might not be a viable option.
 
 ```{r}
 y_sims <- list()
-for (model in multivariate_models){
-  params <- extract(model)
-  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
+for (model in multivariate_glms){
+  params <- posterior_predict(model, draws = 100)
+  head(params)
+  y_sims <- append(y_sims, list(params))
 }
 
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]]), subtitles = c("mean block"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), subtitles = c("se block"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), subtitles = c("worst block"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]]), 
+               subtitles = c("Mean Model"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), 
+               subtitles = c("SE Model"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), 
+               subtitles = c("Worst Model"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]]), 
+               subtitles = c("Full Model"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]]), 
+               subtitles = c("Three Variables Model"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]]), 
+               subtitles = c("RHS Model"))
 ```
 
 # Model comparisons
@@ -474,10 +521,16 @@ for (i in (1:length(linear_models))){
   model_loo <- loo(model_log_lik, r_eff = model_r_eff)
   pareto_k_values <- append(pareto_k_values,
                             list(model_loo$diagnostics$pareto_k))
+  
+  y_pred <- as.vector(extract(linear_models[[i]], pars="y_sim"))
+  preds <- colMeans(y_pred$y_sim)
+  pr <- as.integer(preds >= 0.5)
+  acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
 
   aux_df <- data.frame("variable" = variables[i],
                        "elpd_loo" = model_loo$estimates[1],
-                       "p_loo" = model_loo$estimates[2])
+                       "p_loo" = model_loo$estimates[2],
+                       "accuracy" = acc)
 
   linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
 }
@@ -504,34 +557,49 @@ do.call(grid.arrange, c(p[13:16], ncol=2))
 do.call(grid.arrange, c(p[17:18], ncol=2))
 ```
 ## Multivariate Models
-### Blocks
-
 By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variable blocks for the Multivariate Model for posterior model comparison.
 
 All of the models have relatively exceptional k-values (lower than 0.7), with a few high exceptions (equal or higher than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `worst block`, `mean block` and `se block`.
 
 What we take out of this analysis by variable blocks is that, in general, the `se` variables might not be as influential for predictions as the other blocks. Although this analysis did not bring a more specific result, it was an interesting experiment to carry out in order to check if any of the variable blocks might influence too badly the final model.
 
-Finally, it **must** be mentioned that the difference in prediction accuracy OF the `se block` and the `mean block` are ... .
+Finally, it **must** be mentioned that the difference in prediction accuracy of the `se block` and the `mean block` are ... .
 
+EXPLICAR ESTA FUNCTION AUXILIAR Y PONERLA EN OTRO SITIO
 ```{r}
+# Auxiliary function to calculate the accuracy of a model
+model_accuracies <- function(model){
+  y_pred <- posterior_epred(model)
+  preds <- colMeans(y_pred)
+  predicted <- predict(model, newdata=scaled_cancer_data, type='response')
+  
+  pr <- as.integer(preds >= 0.5)
+  acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
+  
+  conf_matrix <- confusionMatrix(factor(round(predicted)), factor(scaled_cancer_data$diagnosis))
+  return (list(acc, list(conf_matrix)))
+}
+```
+
+```{r, warning=FALSE}
 pareto_k_values <- list()
 multivariate_loo_estimates_df <- data.frame()
 
-for (i in (1:length(multivariate_models))){
-  cat("- Monitoring variable group: ", mv_model_names[i], "\n")
-  model <- multivariate_models[[i]]
-  model_log_lik <- extract_log_lik(model, parameter_name = "log_lik", merge_chains = FALSE)
-  model_r_eff <- relative_eff(exp(model_log_lik))
-  model_loo <- loo(model_log_lik, r_eff = model_r_eff)
+for (i in (1:length(multivariate_glms))){
+  model <- multivariate_glms[[i]]
+  
+  model_log_lik <- log_lik(model)
+  model_loo <- loo(model_log_lik)
   pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  cat("\n-- Monitoring Model: ", mv_model_names[i], "-- \n")
+  print(model_loo)
   
   accs <- model_accuracies(model = multivariate_glms[[i]])
   
   aux_df <- data.frame("variable group" = mv_model_names[i],
                        "elpd_loo" = model_loo$estimates[1],
                        "p_loo" = model_loo$estimates[2],
-                       "accuracy" = accs[1])
+                       "accuracy" = accs[[1]])
   
   multivariate_loo_estimates_df <- rbind(multivariate_loo_estimates_df, aux_df)
 }
@@ -541,31 +609,28 @@ print(multivariate_loo_estimates_df)
 
 ```{r}
 p <- list()
-block_name <- c("mean block", "se block", "worst block")
 for (i in 1:length(pareto_k_values)){
   df <- data.frame(pareto_k_values[[i]])
   colnames(df) <- c("values")
   p[[i]] <- ggplot(data=df, aes(y=values, x=1:nrow(cancer_data))) +
     geom_point(color="#10A5F5") +
     geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
-    ggtitle(block_name[i]) +  xlab("Samples") + ylab("K-values")
+    ggtitle(mv_model_names[i]) +  xlab("Samples") + ylab("K-values")
 }
 
 p[1]
 p[2]
 p[3]
+p[4]
+p[5]
+p[6]
 ```
-
-### Full Model
-
-### Three Variables
-
-### Regularized Horseshoe
 
 # Predictive Performance Assessment
 In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
 
 [Decir si los valores predicción, sensitvity y specificity son buenos]
+[ESCRIBIR SOBRE LO DE LA PAGINA ESA DE SENSITIVITY, SPECIFICITY, ETCCCCC]
 
 ```{r}
 for (i in 1:length(multivariate_glms)){
@@ -581,9 +646,10 @@ for (i in 1:length(multivariate_glms)){
 
 ## Issues and Improvements
 
-- no poder usar stan::sampling con metodos de stan_glm
+- hablar sobre mejorar lo de divergencias
+- no poder usar stan::sampling con metodos de stan_glm sin hacerlo super lioso
 - super incomodo utilizar R para trabajar con datos
-- 
+- ...
 
 ## Group Self-Reflection
 
@@ -649,10 +715,10 @@ for (i in 1:length(multivariate_glms)){
 ```
 ### Divergences
 ```{r}
-for (i in 1:length(multivariate_models)){
+for (i in 1:length(multivariate_glms)){
  cat("Checking divergences for multivariate model:", mv_model_names[i], '\n')
  cat("-------------------------\n")
- check_hmc_diagnostics(multivariate_models[[i]])
+ check_hmc_diagnostics(multivariate_glms[[i]]$stanfit)
 }
 ```
 
