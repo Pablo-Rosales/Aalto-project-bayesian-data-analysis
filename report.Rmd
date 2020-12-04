@@ -319,8 +319,8 @@ model_accuracies <- function(model){
   pr <- as.integer(preds >= 0.5)
   acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
   
-  print(confusionMatrix(factor(round(prueba)),factor(scaled_cancer_data$diagnosis)))
-  return (acc)
+  conf_matrix <- confusionMatrix(factor(round(prueba)),factor(scaled_cancer_data$diagnosis))
+  return (c(acc, conf_matrix))
 }
 
 
@@ -448,15 +448,7 @@ Finally, we have obtained 0 divergences for all of our linear models.
 
 
 # Posterior Predictive Checking
-
-# Predictive Performance Assessment
-In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
-
-[Decir si los valores predicción, sensitvity y specificity son buenos]
-
 ## Linear Models
-
-### Posterior predictive checking
 
 ```{r}
 y_sims <- list()
@@ -504,8 +496,6 @@ bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst",
 ## Multivariate Models
 ### Blocks
 
-### Posterior predictive checking
-
 In the posterior predictive checking for each of the variable blocks, it is noticeable how much less the `se` block can influence the fitting of the model and thus getting better predictive results with these variables might not be a viable option.
 
 ```{r}
@@ -520,6 +510,36 @@ bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), subt
 bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), subtitles = c("worst block"))
 ```
 
+# Predictive Performance Assessment
+In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
+
+[Decir si los valores predicción, sensitvity y specificity son buenos]
+
+## Blocks
+```{r}
+for (model in multivariate_glms){
+  accs <- model_accuracies(model = model)
+  print(accs[[2]])
+}
+```
+
+## Full Model
+```{r}
+accs <- model_accuracies(model = multivariate_full)
+print(accs[[2]])
+```
+
+## Three Variables
+```{r}
+accs <- model_accuracies(model = multivariate_three)
+print(accs[[2]])
+```
+
+## Regularized Horseshoe
+```{r}
+accs <- model_accuracies(model = multivariate_rhsp)
+print(accs[[2]])
+```
 
 
 
@@ -536,6 +556,7 @@ bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), subt
 
 
 # References
+
 
 # Appendices
 ## Appendix A - Linear models
