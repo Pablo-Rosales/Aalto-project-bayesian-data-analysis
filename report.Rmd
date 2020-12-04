@@ -59,7 +59,7 @@ As a summary, our modeling idea has been to do the following analysis' with diff
 3. **Multivariate Model**, done with all 18 features in order to obtain proper posterior checking, and see the minimum optimal amount of variables needed, and which ones, for equal or better prediction as this model with all 18 features.
 4. **Multivariate Model**, done with the best minimum optimal amount of variables, to check if the predictions obtained are equal or better than the model with all variables.
 5. **Multivariate Model**, done with Regularized Horseshoe Prior with the best minimum optimal amount of variables, in order to check if the predictions obtained are equal or better than the model with all variables.
-6. **Gaussian Model**, ...
+6. **Gaussian Model**, done with the four best variables obtained from applying the Multivariate model in order to compare the results of applying it to the dataset and check if it performs better with the selected variables than the considered alternatives. 
 
 # Exploratory Data Analysis
 
