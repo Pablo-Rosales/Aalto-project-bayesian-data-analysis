@@ -291,56 +291,6 @@ do.call(grid.arrange, c(p[13:16], ncol=2))
 do.call(grid.arrange, c(p[17:18], ncol=2))
 ```
 
-
-
-
-
-### Posterior predictive checking
-
-```{r}
-y_sims <- list()
-for (model in linear_models){
-  params <- extract(model)
-  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
-}
-
-ppc1 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
-ppc2 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
-ppc3 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
-ppc4 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]])
-ppc5 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]])
-ppc6 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]])
-ppc7 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[7]])
-ppc8 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[8]])
-ppc9 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[9]])
-ppc10 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[10]])
-ppc11 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[11]])
-ppc12 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[12]])
-ppc13 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[13]])
-ppc14 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[14]])
-ppc15 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[15]])
-ppc16 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
-ppc17 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[17]])
-ppc18 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[18]])
-
-bayesplot_grid(ppc1, ppc2, ppc3, ppc4,
-               subtitles = c("texture_mean", "area_mean", "smoothness_mean",
-                             "concavity_mean"))
-bayesplot_grid(ppc5, ppc6, ppc7, ppc8,
-               subtitles = c("symmetry_mean", "fractal_dimension_mean",
-                             "texture_se", "area_se"))
-bayesplot_grid(ppc9, ppc10, ppc11, ppc12,
-               subtitles = c("smoothness_se", "concavity_se", "symmetry_se",
-                             "fractal_dimension_se"))
-bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles = 
-                 c("smoothness_worst", "concavity_worst", "smoothness_worst", 
-                   "concavity_worst"))
-bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst", 
-                                           "fractal_dimension_worst"))
-
-```
-
-
 ## Multivariate Model - Variable Blocks
 
 Followed by the analysis done for each of the variables, it was decided to create three separate multivariate models, one for each variable block (type of variable): **mean**, **se** and **worst**. This was done in order to observe the efficiency and relevance over the type of the variable and see if some of the measure blocks shouldn't be considered when making the diagnosis.
@@ -463,21 +413,7 @@ p[2]
 p[3]
 ```
 
-### Posterior predictive checking
 
-In the posterior predictive checking for each of the variable blocks, it is noticeable how much less the `se` block can influence the fitting of the model and getting correct predictive results. 
-
-```{r}
-y_sims <- list()
-for (model in multivariate_models){
-  params <- extract(model)
-  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
-}
-
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]]), subtitles = c("mean block"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), subtitles = c("se block"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), subtitles = c("worst block"))
-```
 
 
 
@@ -495,11 +431,11 @@ We would like to have a diagnostic that tell us when the weights are problematic
 A divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value. To evaluate this, we can use the function `check_hmc_diagnostics`.
 
 ## Linear Model Diagnostics
-As seen in the `Appendix A` `monitor` outputs, all $\hat{R}$ values were 1 or close to 1, which means that the linear models' chains have converged.
+As seen in the `Appendix A`[Appendix A - Linear models] `monitor` outputs, all $\hat{R}$ values were 1 or close to 1, which means that the linear models' chains have converged.
 
-As seen in `Appendix A`[Appendix A], the `monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good). Additionally, our ESS values are way higher than 100, which established that our values are good.
+The `monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good). Additionally, our ESS values are way higher than 100, which established that our values are good.
 
-As seen in `Appendix A - Divergences`, we have obtained 0 divergences for all of our models.
+Finally, we have obtained 0 divergences for all of our linear models.
 
 ## Multivariate Model Diagnostics
 ### Blocks
@@ -518,7 +454,71 @@ In order to decide whether the overall diagnosis ability of our model is reliabl
 
 [Decir si los valores predicción, sensitvity y specificity son buenos]
 
+## Linear Models
 
+### Posterior predictive checking
+
+```{r}
+y_sims <- list()
+for (model in linear_models){
+  params <- extract(model)
+  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
+}
+
+ppc1 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
+ppc2 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
+ppc3 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
+ppc4 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]])
+ppc5 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]])
+ppc6 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]])
+ppc7 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[7]])
+ppc8 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[8]])
+ppc9 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[9]])
+ppc10 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[10]])
+ppc11 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[11]])
+ppc12 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[12]])
+ppc13 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[13]])
+ppc14 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[14]])
+ppc15 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[15]])
+ppc16 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
+ppc17 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[17]])
+ppc18 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[18]])
+
+bayesplot_grid(ppc1, ppc2, ppc3, ppc4,
+               subtitles = c("texture_mean", "area_mean", "smoothness_mean",
+                             "concavity_mean"))
+bayesplot_grid(ppc5, ppc6, ppc7, ppc8,
+               subtitles = c("symmetry_mean", "fractal_dimension_mean",
+                             "texture_se", "area_se"))
+bayesplot_grid(ppc9, ppc10, ppc11, ppc12,
+               subtitles = c("smoothness_se", "concavity_se", "symmetry_se",
+                             "fractal_dimension_se"))
+bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles = 
+                 c("smoothness_worst", "concavity_worst", "smoothness_worst", 
+                   "concavity_worst"))
+bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst", 
+                                           "fractal_dimension_worst"))
+
+```
+
+## Multivariate Models
+### Blocks
+
+### Posterior predictive checking
+
+In the posterior predictive checking for each of the variable blocks, it is noticeable how much less the `se` block can influence the fitting of the model and thus getting better predictive results with these variables might not be a viable option.
+
+```{r}
+y_sims <- list()
+for (model in multivariate_models){
+  params <- extract(model)
+  y_sims <- append(y_sims, list(params$y_sim[1:100,]))
+}
+
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]]), subtitles = c("mean block"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), subtitles = c("se block"))
+bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), subtitles = c("worst block"))
+```
 
 
 
