@@ -382,7 +382,7 @@ train_set <-scaled_cancer_data[train_index, ]
 test_set <- scaled_cancer_data[test_index, ]
 ```
 
-The gaussian model was carried out over the three best variables contained in the set of optimal variables obtained using the previous models.
+The gaussian model was carried out over the four best variables contained in the set of optimal variables obtained using the previous models.
 ```{r}
 variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean", "area_mean")
 gaussian_fits <- c()
