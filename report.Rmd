@@ -205,7 +205,8 @@ p_0 <- 3 # number of relevant variables
 tau_0 <- p_0 / (length(variables) - p_0) * 1 / sqrt(nrows)
 rhs_prior <- hs(global_scale = tau_0)
 ```
-
+## Gaussian Model
+Gaussian processes are parametrized by a mean vector and a covariance matrix. The kernel that yields the covariance matrix depends on two hyperpriors, the length scale, $\rho$, and the marginal standard deviation $\alpha$. The mean vector prior was characterized by a standard normal distribution, as well as the other parameters, except for the length scale, which samples from an inverse gamma distribution.
 
 # Models
 Throughout this section, the designed modeling ideas will be presented in its respective subsection: explanation of the model, code, analysis and diagnostics.
@@ -364,6 +365,51 @@ multivariate_rhsp <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_
 multivariate_glms <- append(multivariate_glms, list(multivariate_rhsp))
 ```
 
+## Gaussian Model
+The last model that was considered for this project was a Gaussian Process based model. Gaussian models provide a probability distribution over functions. They are useful for representing those datasets that cannot be easily adjusted to a line following a regression procedure. A gaussian process consists of generating higher degree polynomial functions and assigning to those functions a probability. Therefore, by taking the mean over the probability distribution, the most probable fit is obtained.
+
+$\linebreak$
+
+In order to later assess the performance of the gaussian model based on the quality of its predictions, the data set is divided into two subsets, one for "training" the model, containing a higher number of observations, and another one for testing the model.
+
+### Stan code
+
+```{r}
+train_index <- sample(1:nrow(scaled_cancer_data), 0.8*nrow(scaled_cancer_data))
+test_index <- setdiff(1:nrow(scaled_cancer_data), train_index)
+
+train_set <-scaled_cancer_data[train_index, ]
+test_set <- scaled_cancer_data[test_index, ]
+```
+
+The gaussian model was carried out over the three best variables contained in the set of optimal variables obtained using the previous models.
+```{r}
+variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean", "area_mean")
+gaussian_fits <- c()
+x_predicts_idx <- c()
+N_obs <- 200
+N_predict <- 100
+gaussian_model <- rstan::stan_model(file = "models/gaussian_process_bernoulli.stan")
+```
+
+From the training set, 200 randomly selected observations are considered. Gaussian models are computationally slow, hence, using the total number of observations would take much time. From the test set, 100 observations are chosen, also randomly.
+```{r}
+for (variable in variables_gaussian){
+  cat("\nSampling from model with variable: ", variable, "\n")
+  x_obs_idx <- sort(sample(1:length(train_set[,variable]), N_obs))
+  x_predict_idx <- sort(sample(1:length(test_set[,variable]), N_predict))
+  x_predicts_idx <- c(x_predicts_idx, x_predict_idx)
+  gaussian_model_data <- list(N_predict = N_predict,
+                              x_predict = test_set[,variable][x_predict_idx],
+                              N_obs = N_obs,
+                              x_obs = train_set[,variable][x_obs_idx],
+                              y_obs = train_set[,"diagnosis"][x_obs_idx])
+  #gaussian_fit <- stan(file = "models/gaussian_process_bernoulli.stan", data = gaussian_model_data, iter=2000, chains=1)
+  
+  gaussian_fit <-rstan::sampling(gaussian_model, data = gaussian_model_data,iter=1000, chains=2, refresh=0)
+  gaussian_fits <- c(gaussian_fits, gaussian_fit)
+}
+```
 
 # Convergence Diagnostics
 ## Diagnostic Metrics
