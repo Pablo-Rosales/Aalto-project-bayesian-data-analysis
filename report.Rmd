@@ -10,6 +10,9 @@ output:
     toc: yes
     toc_depth: '1'
     df_print: paged
+header-includes: 
+- \usepackage{float}
+- \usepackage{subfig}
 ---
 
 ```{r setup, include=FALSE}
@@ -215,10 +218,12 @@ $$
 Hence, the priors and hyperpriors are as following:
 
 $$
-\rho \sim InvGamma(1,1) \\
-\alpha \sim Normal(0,1) \\
-a \sim Normal(0,1) \\
-\eta \sim Normal(0,1)
+\begin{aligned}
+\rho &\sim InvGamma(1,1) \\[2pt]
+\alpha &\sim Normal(0,1) \\[2pt]
+a &\sim Normal(0,1) \\[2pt]
+\eta &\sim Normal(0,1) \\[2pt]
+\end{aligned}
 $$
 
 Where the vector eta is added to increase the efficiency of the sampling.
@@ -266,19 +271,6 @@ for (variable in variables){
 
 Followed by the analysis done for each of the variables, it was decided to create three separate multivariate models, one for each variable block (type of variable): **mean**, **se** and **worst**. This was done in order to observe the efficiency and relevance over the type of the variable and see if some of the measure blocks shouldn't be considered when making the diagnosis.
 
-### Stan code
-
-The common **stan code** used for Variable Blocks is designed as follows:
-
-```{r}
-writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
-linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_model_bernoulli_multivariate.stan")
-```
-
-As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
-
-For convenience we ended up sampling with `stan_glm`, whose code can be found in [!!!APPENDIX MV BLOCK CODE!!!], because there are many models and we needed to use functions that required `stan_glm` objects as input. For this reason, the sampling with the `.stan` code is commented.
-
 ### Sampling
 
 The following code draws samples from the defined stan model. Each iteration pertains to a variable block ('mean', 'se' and 'worst'), comprised of 6 variables for each of them ('texture', 'area', 'smoothness', 'concavity', 'symmetry', 'fractal_dimension'), which are passed as predictors to the model. Additionally to each of the variable blocks, the sampling also receives as input the number `N` of observations of the dataset and the binary target value (diagnosis) for each of the observations.
@@ -324,7 +316,8 @@ for (i in (1:3)){
   # 
   # multivariate_models <- c(multivariate_models, multivariate_sampling)
   
-  multivariate_glm <- stan_glm(paste("diagnosis ~", paste(var_block, collapse = "+")),
+  multivariate_glm <- stan_glm(paste("diagnosis ~",
+                                     paste(var_block, collapse = "+")),
                                data = scaled_cancer_data,
                                family = binomial(link = "logit"), 
                                prior = beta, prior_intercept = alpha, QR=TRUE,
@@ -333,26 +326,36 @@ for (i in (1:3)){
 }
 ```
 
+### Stan Code
+
+The priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients.
+
+For convenience we ended up sampling with `stan_glm`, whose code can be found in the [Appendix D - Model Code](#apb) in the `Multivariate Variable Block Stan_GLM Code`, because there are many models and we needed to use functions that required `stan_glm` objects as input. 
+
+For this reason, even though we originally started with `.stan` code, the sampling with it has been omitted in the sampling code above. Finally the `.stan` code can be found in the [Appendix D - Model Code](#apb) in the `Multivariate Variable Block Stan Code` if one wishes to see it. Originally, the likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
+
 ## Multivariate Model - Full Model
 
 Additionally, we decided to carry out a more sensible approach, which was to start by creating and fitting a model which contains all of the 18 variables.
 
 The reasoning behind this model is to carry out projection predictive variable by analyzing the coefficient marginal posteriors and the solution terms, in order to obtain possible information regarding the optimal number of variables that should be used for the data and which of the variables (and in which order) have more weight in the data.
 
-### Sampling
+### Sampling and Stan Code
 
 For this model, we used `generalized linear model`, `stan_glm`, using the same prior distributions for the intercept and regression coefficients as the previous models, this is: $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for the regression coefficient.
 
-In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`.
+In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`. The `.stan` code can be found in the [Appendix D - Model Code](#apb) in the `Multivariate Full Model Stan_GLM Code`.
 
-The formula is the one stated above, and includes the predictive and target variables.
+The formula includes the predictive and target variables.
 
 ```{r, warning=FALSE}
-multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
+multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean
+                              + smoothness_mean + concavity_mean
                               + symmetry_mean + fractal_dimension_mean
-                              + texture_se + area_se + smoothness_se + concavity_se
-                              + symmetry_se + fractal_dimension_se
-                              + texture_worst + area_worst + smoothness_worst + concavity_worst
+                              + texture_se + area_se + smoothness_se
+                              + concavity_se + symmetry_se
+                              + fractal_dimension_se + texture_worst
+                              + area_worst + smoothness_worst + concavity_worst
                               + symmetry_worst + fractal_dimension_worst,
                               data = scaled_cancer_data,
                               family = binomial(link = "logit"), 
@@ -360,14 +363,6 @@ multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_
                               adapt_delta=0.9999, iter=5000,
                               seed=SEED, refresh=0)
 multivariate_glms <- append(multivariate_glms, list(multivariate_full))
-```
-
-### Stan Code
-
-CAMBIAR ESTO As seen in the stan model below, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
-
-```{r}
-#get_stanmodel(multivariate_full$stanfit)
 ```
 
 ### Coefficient Marginal posteriors
@@ -388,13 +383,13 @@ Because we want to subject all variables to selection, we continue with projecti
 
 As mentioned above, one of the reasonings behind using this full model is to obtain the optimal number of variables for which the predictive performance is the same as the full model or better. By looking at the plot we can see that we can achieve a higher predictive performance using only 3 variables instead of 18. This can be corroborated further by running the `suggest_size` function, which tells us that the optimal number of variables for equal performance is 2, but better results can be achieved with 3.
 
-```{r, echo=FALSE, fig.cap='cv_varsel function output', fig.align='center', fig.pos="H", out.width = '80%'}
+```{r, echo=FALSE, fig.cap='cv varsel function output', fig.align='center', fig.pos="H", out.width = '80%'}
 knitr::include_graphics('images/cv_varsel.png')
 ```
 
 The other reasoning behind the full model was which of the variables are the best for obtaining better predictive performance. We can obtain a ranking of best variables to be inserted in the model with `solution_terms`, and from this ranking we choose the first 3 best variables: `area_worst`, `smoothness_mean` and `texture_mean`.
 
-```{r, echo=FALSE, fig.cap='solution_terms function output', fig.align='center', fig.pos="H", out.width = '80%'}
+```{r, echo=FALSE, fig.cap='solution terms function output', fig.align='center', fig.pos="H", out.width = '80%'}
 knitr::include_graphics('images/solution_terms.png')
 ```
 
@@ -412,67 +407,51 @@ plot(vs, stats = c('elpd', 'rmse'))
 
 This model is the result of applying projection predictive variable selection to the full multivariate model of 18 variables. In this model we simply take the 3 best variables obtained using the previous analysis and study the outcomes.
 
-### Sampling
+### Sampling and Stan Code
 
 For this model, we used `generalized linear model`, `stan_glm`, using the same prior distributions for the intercept and regression coefficients as the previous models, this is: $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for the regression coefficient.
 
-In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`.
+In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`. The `.stan` code can be found in the [Appendix D - Model Code](#apb) in the `Multivariate Three Variables Model Stan_GLM Code`.
 
-The formula is the one stated above, and includes the 3 best ranked predictive variables and the target.
+The formula includes the 3 best ranked predictive variables and the target.
 
 ```{r}
-multivariate_three <- stan_glm(diagnosis ~ area_worst + smoothness_mean + texture_mean,
-                               data = scaled_cancer_data,
+multivariate_three <- stan_glm(diagnosis ~ area_worst + smoothness_mean
+                               + texture_mean, data = scaled_cancer_data,
                                family = binomial(link = "logit"), 
                                prior = beta, prior_intercept = alpha,
                                seed = SEED, refresh=0)
 multivariate_glms <- append(multivariate_glms, list(multivariate_three))
 ```
 
-### Stan Code
-
-EXPLICAR EL CODE
-
-```{r}
-#get_stanmodel(multivariate_three$stanfit)
-```
-
 ## Multivariate Model - Regularized Horseshoe Model
 
 As we already know that most of the variables are irrelevant thanks to the previous projection predictive variable selection analysis, and only three variables are relevant in order to obtain a better performance, we decided to implement a Regularized Horseshoe Prior approach which has been proven to be a worthy alternative.
 
-### Sampling
+### Sampling and Stan Code
 
 For this model, we used `generalized linear model`, `stan_glm`, but instead of using the same priors for the intercept and regression coefficients we use the weakly informative regularized horseshoe prior which includes prior assumption that some of the variables might be irrelevant.
 
-This is the reaso
+This is the reason why we choose $p_0 = 3$, and we pass this to the regularized horseshoe prior, which will in turn use it to calculate the respective distributions.
 
-We have also used a Weakly Regularized Horseshoe Prior, as *Piironen+Vehtari:RHS:2017*, where we included the prior assumption that a number of variables are more relevant that the rest. The assumption origin will be discussed in a future section, but as a summary, it has been assumed that there are 3 relevant variables, while the others are irrelevant.
+In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`. The `.stan` code can be found in the [Appendix D - Model Code](#apb) in the `Multivariate RHS Model Stan_GLM Code`.
 
-
-
-In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`.
-
-The formula is the one stated above, and includes the 3 best ranked predictive variables and the target.
+The formula for the regularized horseshoe prior is the same as the multivariate model with all variables, it includes all of the 18 predictive variables and the target.
 
 ```{r}
-multivariate_rhsp <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
+multivariate_rhsp <- stan_glm(diagnosis ~ texture_mean + area_mean
+                              + smoothness_mean + concavity_mean
                               + symmetry_mean + fractal_dimension_mean
-                              + texture_se + area_se + smoothness_se + concavity_se
-                              + symmetry_se + fractal_dimension_se
-                              + texture_worst + area_worst + smoothness_worst + concavity_worst
+                              + texture_se + area_se + smoothness_se
+                              + concavity_se + symmetry_se
+                              + fractal_dimension_se + texture_worst
+                              + area_worst + smoothness_worst + concavity_worst
                               + symmetry_worst + fractal_dimension_worst,
                               data = scaled_cancer_data,
                               family = binomial(link = "logit"),
                               prior=rhs_prior, QR=TRUE,
                               seed = SEED, refresh=0)
 multivariate_glms <- append(multivariate_glms, list(multivariate_rhsp))
-```
-
-### Stan Code
-
-```{r}
-#get_stanmodel(multivariate_rhsp$stanfit)
 ```
 
 ## Gaussian Model
@@ -505,7 +484,8 @@ gaussian_fits <- c()
 x_predicts_idx <- c()
 N_obs <- 200
 N_predict <- 100
-gaussian_model <- rstan::stan_model(file = "models/gaussian_process_bernoulli.stan")
+gaussian_model <- rstan::stan_model(file = 
+                                      "models/gaussian_process_bernoulli.stan")
 ```
 
 From the training set, 200 randomly selected observations are considered. Gaussian models are computationally slow, hence, using the total number of observations would take much time. From the test set, 100 observations are chosen, also randomly.
@@ -533,24 +513,29 @@ for (variable in variables_gaussian){
 ## Diagnostic Metrics
 The aim of this section is to assess the convergence of our models using a variety of diagnostics:
 
-$\hat{R}$ can be used to monitor if a group of chains has converged to the target distribution. This can be done by comparing the between and within-chain estimate for model parameters. If chains have not converged, meaning that they have not mixed well, $\hat{R}$ will be greater than one. If chains have converged, the $\hat{R}$ value will be virtually one.
+$\mathbf{\hat{R}}$ is a quantitative measure of convergence that will be used to monitor if a group of chains has converged to the target distribution. This can be done by comparing the between and within-chain estimate for model parameters. If chains have not converged, meaning that they have not mixed well, $\hat{R}$ will be greater than one. If chains have converged, the $\hat{R}$ value will be virtually one.
 
-We would like to have a diagnostic that tells us when the weights are problematic, as we could have vastly imbalanced weights. In this case, we could use **effective sample size ($S_{eff}$)**, a quantitative measure of efficiency in **importance sampling**. $S_{eff}$ represents the number of independent samples required to obtain an importance sampling estimate with about the same efficiency as if we would have used all the samples.
+$\mathbf{Effective Sample Size (S_{eff})}$ is a quantitative measure of efficiency that will be used to check when the weights are problematic, as we could have vastly imbalanced weights. It represents the number of independent samples required to obtain an importance sampling estimate with about the same efficiency as if we would have used all the samples. The `monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good).
 
-A divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value. To evaluate this, we can use the function `check_hmc_diagnostics`.
+$\mathbf{Divergence}$ checking will be used to check if a divergence arises when the simulated Hamiltonian trajectory departs from the true trajectory as measured by departure of the Hamiltonian value from its initial value. To evaluate this, we will use the function `check_hmc_diagnostics`.
 
 ## Linear Model Diagnostics
-As seen in the `Appendix A`[Appendix A - Linear models] `monitor` outputs, all $\hat{R}$ values were 1 or close to 1, which means that the linear models' chains have converged.
+The diagnostics for the linear models can be seen in the [Appendix A - Linear models](#apa) `Monitor` and `Divergences` outputs.
 
-The `monitor` function gives us two crude measures of effective sample size called Bulk_ESS and Tail_ESS (an $ESS > 100$ per chain is considered good). Additionally, our ESS values are way higher than 100, which established that our values are good.
+All $\hat{R}$ values in the linear models were 1 or close to 1, which means that the chains have converged.
+
+Additionally, the ESS values are way higher than 100, which establishes that our values are good.
 
 Finally, we have obtained 0 divergences for all of our linear models.
 
 ## Multivariate Model Diagnostics
+The diagnostics for the multivariate models can be seen in the [Appendix B - Multivariate models](#apb) `Monitor` and `Divergences` outputs.
 
-ESCRIBIR AQUI SOBRE TODO EN UN MISMO APARTADO
+All $\hat{R}$ values in the multivariate models were 1 or close to 1, which means that the chains have converged.
 
-Escribir que se ha aumentado el numero de cadenas,iteraciones y adapt_delta. Escribir el porque
+Additionally, the ESS values are way higher than 100, which establishes that our values are good.
+
+All multivariate models turned great regarding divergences. It must be noted that the full multivariate model was problematic regarding this issue. At first, the model contained more than 300 divergences. To solve this, we tried different values of adapt_delta (0.95, 0.999) and increased the number of iterations up to 5000. We also tried increasing the number of chains but this wasn't a viable option as the computational time increased to an unrealistic point. Although the performance has improved considerably, some divergences still exist, which may be caused by the model's chains not visiting parts of the variable space with significant posterior mass leading to biased estimates. It must be noted that the number of divergences should be negligible as the full multivariate model only has 11 divergences out of 10000 iterations (0.11%).
 
 ## Gaussian Model Diagnostics
 In order to visually assess the convergence of the gaussian model, the chains for the scalar parameters are plotted.
@@ -565,6 +550,8 @@ As in previous cases, the values obtained from applying the function `monitor`ar
 
 # Posterior Predictive Checking
 ## Linear Models
+
+Kernel density estimate for the data and posterior predictive replicates of the linear models are slightly similar. From this we noticed that some variables might be worst for predictions, such as all of the `se` variables (``texture_se`, `symmetry_se`, etc.).
 
 ```{r}
 y_sims <- list()
@@ -592,26 +579,25 @@ ppc16 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[16]])
 ppc17 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[17]])
 ppc18 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[18]])
 
-bayesplot_grid(ppc1, ppc2, ppc3, ppc4,
-               subtitles = c("texture_mean", "area_mean", "smoothness_mean",
-                             "concavity_mean"))
-bayesplot_grid(ppc5, ppc6, ppc7, ppc8,
-               subtitles = c("symmetry_mean", "fractal_dimension_mean",
-                             "texture_se", "area_se"))
-bayesplot_grid(ppc9, ppc10, ppc11, ppc12,
-               subtitles = c("smoothness_se", "concavity_se", "symmetry_se",
-                             "fractal_dimension_se"))
-bayesplot_grid(ppc13, ppc14, ppc15, ppc16, subtitles =
-                 c("smoothness_worst", "concavity_worst", "smoothness_worst",
-                   "concavity_worst"))
-bayesplot_grid(ppc17, ppc18, subtitles = c("symmetry_worst",
-                                           "fractal_dimension_worst"))
-
+bayesplot_grid(ppc1, ppc2, ppc3, ppc4, ppc5, ppc6,
+               subtitles = c("texture_mean", "area_mean",
+                             "smoothness_mean", "concavity_mean",
+                             "symmetry_mean", "fractal_dimension_mean"))
+bayesplot_grid(ppc7, ppc8, ppc9, ppc10, ppc11, ppc12,
+               subtitles = c("texture_se", "area_se",
+                             "smoothness_se", "concavity_se",
+                             "symmetry_se", "fractal_dimension_se"))
+bayesplot_grid(ppc13, ppc14, ppc15, ppc16, ppc17, ppc18,
+               subtitles = c("texture_worst", "area_worst",
+                             "smoothness_worst", "concavity_worst", 
+                             "symmetry_worst", "fractal_dimension_worst"))
 ```
 
 ## Multivariate Models
 
-In the posterior predictive checking for each of the variable blocks, it is noticeable how much less the `se` block can influence the fitting of the model and thus getting better predictive results with these variables might not be a viable option.
+In the posterior predictive checking for each of the variable blocks, it is noticeable how much less the `se` block can influence the fitting of the model and thus getting better predictive results with these variables might not be a viable option. This is corroborated by the linear model predictive checking.
+
+The `full`, `three variables` and `rhs` multivariate models have relatively similar kernel density estimate for the data.
 
 ```{r}
 y_sims <- list()
@@ -621,18 +607,17 @@ for (model in multivariate_glms){
   y_sims <- append(y_sims, list(params))
 }
 
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]]), 
-               subtitles = c("Mean Model"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]]), 
-               subtitles = c("SE Model"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]]), 
-               subtitles = c("Worst Model"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]]), 
-               subtitles = c("Full Model"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]]), 
-               subtitles = c("Three Variables Model"))
-bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]]), 
-               subtitles = c("RHS Model"))
+ppc_mv_1 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[1]])
+ppc_mv_2 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[2]])
+ppc_mv_3 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[3]])
+ppc_mv_4 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[4]])
+ppc_mv_5 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[5]])
+ppc_mv_6 <- ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]])
+
+bayesplot_grid(ppc_mv_1, ppc_mv_2, ppc_mv_3, ppc_mv_4, ppc_mv_5, ppc_mv_6,
+               subtitles = c("Mean Model", "SE Model",
+                             "Worst Model", "Full Model",
+                             "Three Variables Model", "RHS Model"))
 ```
 
 ## Gaussian Model
@@ -667,10 +652,25 @@ for (j in 1:(length(gaussian_fits))){
 ```
 
 # Model comparisons
-## Linear Models
-By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variables for the Linear Model for posterior model comparison.
+For model comparison we compare the models with **Leave-One-Out Cross Validation** (PSIS-LOO) and we assess the $\hat{k}$-values reliability for each of the models. If for the latter for the $\hat{k}$-values of a model are equal or lower than 0.7 we can consider that the model is reliable.
 
-Most of the models have exceptional k-values (lower than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `area_worst`, `area_mean`, `area_se`, `concavity_mean`.
+## Linear Models
+We obtain the PSIS-LOO estimates for each of the linear models as well as their respective $\hat{k}$-values.
+
+By looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the most reliable variables to be used are as follows (in order of best): `area_worst`, `area_mean`, `area_se`, `concavity_mean`.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Variable}   & \textbf{elpd\_loo} & \textbf{p\_loo} \\ \hline
+14 - area\_worst    & -117.29            & 1.89            \\ \hline
+2 - area\_mean      & -164.88            & 2.00            \\ \hline
+8 - area\_se        & -181.79            & 2.20            \\ \hline
+4 - concavity\_mean & -194.48            & 3.58            \\ \hline
+\end{tabular}
+\caption{Most reliable linear models.}
+\end{table}
 
 ```{r}
 pareto_k_values <- list()
@@ -702,7 +702,7 @@ for (i in (1:length(linear_models))){
 print(linear_loo_estimates_df)
 ```
 
-The following output visualizes the Pareto-k values for each linear model.
+Most of the models have exceptional $\hat{k}$-values (lower than 0.7), which means that the results obtained by the models are reliable. The following output visualizes the Pareto-k values for each linear model.
 
 ```{r}
 p <- list()
@@ -714,23 +714,32 @@ for (i in 1:length(pareto_k_values)){
     geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
     ggtitle(variables[i]) +  xlab("Samples") + ylab("K-values")
 }
-do.call(grid.arrange, c(p[1:4], ncol=2))
-do.call(grid.arrange, c(p[5:8], ncol=2))
-do.call(grid.arrange, c(p[9:12], ncol=2))
-do.call(grid.arrange, c(p[13:16], ncol=2))
-do.call(grid.arrange, c(p[17:18], ncol=2))
+do.call(grid.arrange, c(p[1:6], ncol=3))
+do.call(grid.arrange, c(p[7:12], ncol=3))
+do.call(grid.arrange, c(p[13:18], ncol=3))
 ```
 
 ## Multivariate Models
-By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variable blocks for the Multivariate Model for posterior model comparison.
+We obtain the PSIS-LOO estimates for each of the multivariate models as well as their respective $\hat{k}$-values.
 
-All of the models have relatively exceptional k-values (lower than 0.7), with a few high exceptions (equal or higher than 0.7), which means that the results obtained by the models are reliable. Additionally by looking at the `elpd_loo` and `p_loo` values for each of the models, we can deduce that the best variables to be used in order for diagnosis are as follows (in order of best): `worst block`, `mean block` and `se block`.
+What we take out of the analysis by variable blocks is that, in general, the `se` variables might not be as influential for predictions as the other blocks. Although this analysis did not bring a more specific result, it was an interesting experiment to carry out in order to check if any of the variable blocks might influence the final model too badly.
 
-What we take out of this analysis by variable blocks is that, in general, the `se` variables might not be as influential for predictions as the other blocks. Although this analysis did not bring a more specific result, it was an interesting experiment to carry out in order to check if any of the variable blocks might influence too badly the final model.
+For the other models: `Full Variables Model`, `Three Variables Model` and `RHS Model`, the results are as we expected from before starting the analysis. The results for the `Full Variables Model` show that it isn't viable to use all of the 18 variables, because we obtain even better results by using the optimal number of variables and the specific variables we obtained from the projection predictive variable selection analysis, as can be seen in the results of `Three Variables Model` and `RHS Model`.
 
-Finally, it **must** be mentioned that the difference in prediction accuracy of the `se block` and the `mean block` are ... .
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{variable.group} & \textbf{elpd\_loo} & \textbf{p\_loo} \\ \hline
+1 Mean Model            & -83.85             & 5.68            \\ \hline
+2 SE Model              & -173.03            & 12.22           \\ \hline
+3 Worst Model           & -57.17             & 2.76            \\ \hline
+4 Full Variables Model  & -95.77             & 5.78            \\ \hline
+5 Three variables Model & -63.92             & 3.34            \\ \hline
+6 RHS Model             & -48.70             & 14.45           \\ \hline
+\end{tabular}
+\end{table}
 
-EXPLICAR ESTA FUNCTION AUXILIAR Y PONERLA EN OTRO SITIO
 ```{r}
 # Auxiliary function to calculate the accuracy of a model
 model_accuracies <- function(model){
@@ -739,7 +748,8 @@ model_accuracies <- function(model){
   pr <- as.integer(preds >= 0.5)
   acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
   
-  conf_matrix <- confusionMatrix(factor(round(pr)), factor(scaled_cancer_data$diagnosis))
+  conf_matrix <- confusionMatrix(factor(round(pr)), 
+                                 factor(scaled_cancer_data$diagnosis))
   return (list(acc, list(conf_matrix)))
 }
 ```
@@ -753,9 +763,10 @@ for (i in (1:length(multivariate_glms))){
   
   model_log_lik <- log_lik(model)
   model_loo <- loo(model_log_lik)
-  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  pareto_k_values <- append(pareto_k_values, 
+                            list(model_loo$diagnostics$pareto_k))
   cat("\n-- Monitoring Model: ", mv_model_names[i], "-- \n")
-  print(model_loo)
+  #print(model_loo)
   
   accs <- model_accuracies(model = multivariate_glms[[i]])
   
@@ -770,6 +781,10 @@ for (i in (1:length(multivariate_glms))){
 print(multivariate_loo_estimates_df)
 ```
 
+All of the multivariate variable block models have relatively exceptional $\hat{k}$-values (lower than 0.7), with a few high exceptions (equal or higher than 0.7), which means that the results obtained by the models are relatively reliable.
+
+For the `Full Variables Model` and `Three Variables Model`, we obtain relatively decent $\hat{k}$-values, with a few more high exceptions than for the variable block models. On the other hand, for the `RHS Model`, the $\hat{k}$-values are mediocre, as there is a high amount (14%) of higher than 0.7 values. Even though we obtain better PSIS-LOO and predictive results than for the previous models, we must be aware of the fact that `Full Variables Model`, `Three Variables Model` and `RHS Model` **may** be considered unreliable.
+
 ```{r}
 p <- list()
 for (i in 1:length(pareto_k_values)){
@@ -780,13 +795,8 @@ for (i in 1:length(pareto_k_values)){
     geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
     ggtitle(mv_model_names[i]) +  xlab("Samples") + ylab("K-values")
 }
-
-p[1]
-p[2]
-p[3]
-p[4]
-p[5]
-p[6]
+do.call(grid.arrange, c(p[1:3], ncol=3))
+do.call(grid.arrange, c(p[4:6], ncol=3))
 ```
 
 ## Gaussian Model
@@ -843,18 +853,54 @@ accuracy_gaussian <- function(predictions, labels){
 
 
 # Predictive Performance Assessment
-In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
 
-[Decir si los valores predicción, sensitvity y specificity son buenos]
-[ESCRIBIR SOBRE LO DE LA PAGINA ESA DE SENSITIVITY, SPECIFICITY, ETCCCCC]
+In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis: a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine. Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
 
-```{r}
-for (i in 1:length(multivariate_glms)){
-  accs <- model_accuracies(model = multivariate_glms[[i]])
-  print(mv_model_names[i])
-  print(accs[[2]])
-}
-```
+## Linear Models
+The linear models were not assessed as thorough as the other approaches, as we already knew that the linear models weren't as useful, promising and reliable for diagnosing.
+
+Given the previous linear model comparisons, the most reliable variables for diagnosing are the ones that have better accuracy compared to the rest as seen in the comparison table below.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Variable}   & \textbf{Accuracy} \\ \hline
+14 - area\_worst    & 0.9104            \\ \hline
+2 - area\_mean      & 0.8822            \\ \hline
+8 - area\_se        & 0.8682            \\ \hline
+4 - concavity\_mean & 0.8822            \\ \hline
+\end{tabular}
+\caption{Accuracy for most reliable linear models.}
+\end{table}
+
+As a final note on linear models, it must be reminded that these models mustn't be used for actual diagnosing as they aren't reliable.
+
+## Multivariate Models
+
+The multivariate model approach, as expected, is better for diagnosis prediction than the other approaches.
+
+As seen in the table below, the best model is the `RHS Model` followed by the `Worst Model`. From the linear models analysis, it is inferred that the `SE` variables would perform worse, this is reflected in the results of the `SE Model`. 
+
+Additionally, it can be seen how the projection predictive variable analysis carried out from the full model helped us achieve better results with lower amount of variables.
+
+Moreover, a more thorough analysis can be found in [Appendix B - Multivariate models](#apb) in `Confusion Matrices`, where a confusion matrix is visualized for each model containing both the sensitivity and specificity. Generally, the predictions are reliable as the sensitivity and specificity for each model are good. On the other hand, one can see just how unreliable the `SE Model` is, as the number of false negatives are higher.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{variable.group} & \textbf{accuracy} & Sensitivity & Specificity \\ \hline
+1 Mean Model            & 0.9438     & 0.9664 & 0.9057       \\ \hline
+2 SE Model              & 0.8910 & 0.9580 & 0.7783             \\ \hline
+3 Worst Model           & 0.9719 & 0.9888 & 0.9434           \\ \hline
+4 Full Variables Model  & 0.9332 & 0.9608 & 0.8868            \\ \hline
+5 Three variables Model & 0.9543 & 0.9720 & 0.9245            \\ \hline
+6 RHS Model             & 0.9859 & 0.9944 & 0.9717           \\ \hline
+\end{tabular}
+\end{table}
+
+## Gaussian Model
 
 In the case of the gaussian processes, making use of the implemented function, the obtained accuracies are computed as:
 
@@ -889,6 +935,7 @@ The results for the intermediate variables are not good at all. They improve for
 ## Issues and Improvements
 
 - hablar sobre mejorar lo de divergencias
+- Hablar sobre los k-values
 - no poder usar stan::sampling con metodos de stan_glm sin hacerlo super lioso
 - super incomodo utilizar R para trabajar con datos
 - ...
@@ -899,9 +946,22 @@ The results for the intermediate variables are not good at all. They improve for
 
 # References
 
+- BDA3 Book
+
+- Prior Choice Recommendations
+https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations
+
+- Bodyfat
+https://avehtari.github.io/modelselection/bodyfat.html
+
+- Diabetes
+https://avehtari.github.io/modelselection/diabetes.html
+
+- Regularized Horseshoe Example
+https://betanalpha.github.io/assets/case_studies/bayes_sparse_regression.html
 
 # Appendices
-## Appendix A - Linear models
+## Appendix A - Linear models {#apa}
 ### Monitor
 
 Monitor output has been omitted for convenience, only relevant variables (Rhat, Bulk_ESS and Tail_ESS) are shown.
@@ -934,7 +994,8 @@ for (i in (1:length(linear_models))){
 ```
 
 
-## Appendix B - Multivariate models
+## Appendix B - Multivariate models {#apb}
+
 ### Monitor
 Monitor output has been omitted for convenience, only relevant variables (Rhat, Bulk_ESS and Tail_ESS) are shown.
 
@@ -952,10 +1013,11 @@ for (i in 1:length(multivariate_glms)){
   cat("Rhat of alpha and beta:", rhat_alpha, rhat_beta, '\n')
   cat("Bulk_ESS for alpha and beta:", bulk_alpha, bulk_beta, '\n')
   cat("Tail_ESS for alpha and beta:", tail_alpha, tail_beta, '\n')
-  
 }
 ```
+
 ### Divergences
+
 ```{r}
 for (i in 1:length(multivariate_glms)){
  cat("Checking divergences for multivariate model:", mv_model_names[i], '\n')
@@ -964,7 +1026,17 @@ for (i in 1:length(multivariate_glms)){
 }
 ```
 
-## Appendix C - Gaussian model
+### Confusion Matrices
+
+```{r}
+for (i in 1:length(multivariate_glms)){
+  accs <- model_accuracies(model = multivariate_glms[[i]])
+  print(mv_model_names[i])
+  print(accs[[2]])
+}
+```
+
+## Appendix C - Gaussian model {#apc}
 
 ### Monitor
 Monitor output has been omitted for convenience, only relevant variables (Rhat, Bulk_ESS and Tail_ESS) are shown.
@@ -996,12 +1068,35 @@ for (i in 1:length(gaussian_fits)){
 }
 ```
 
+## Appendix D - Model Code {#apd}
 
+### Multivariate Variable Block Stan Code
+```{r}
+writeLines(readLines("models/linear_model_bernoulli_multivariate.stan"))
+```
 
+### Multivariate Variable Block Stan_GLM Code
 
+```{r}
+get_stanmodel(multivariate_glms[[1]]$stanfit)
+```
 
+### Multivariate Full Model Stan_GLM Code
 
+```{r}
+get_stanmodel(multivariate_full$stanfit)
+```
 
+### Multivariate Three Variables Model Stan_GLM Code
 
+```{r}
+get_stanmodel(multivariate_three$stanfit)
+```
+
+### Multivariate RHS Model Stan_GLM Code
+
+```{r}
+get_stanmodel(multivariate_rhs$stanfit)
+```
 
 
