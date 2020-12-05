@@ -644,15 +644,15 @@ for (j in 1:(length(gaussian_fits))){
 }
 ```
 
-```{r, echo=FALSE, fig.cap='densities for area_worst variable', fig.align='center', fig.pos="H", out.width = '70%'}
+```{r, echo=FALSE, fig.cap='densities for areamworst variable', fig.align='center', fig.pos="H", out.width = '70%'}
 knitr::include_graphics('images/area_worst_densities.png')
 ```
 
-```{r, echo=FALSE, fig.cap='densities for the smoothness_mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
+```{r, echo=FALSE, fig.cap='densities for the smoothness mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
 knitr::include_graphics('images/smoothness_mean_densities.png')
 ```
 
-```{r, echo=FALSE, fig.cap='densities for the texture_mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
+```{r, echo=FALSE, fig.cap='densities for the texture mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
 knitr::include_graphics('images/texture_mean_densities.png')
 ```
 
@@ -830,8 +830,8 @@ for (i in 1:length(pareto_k_values)){
     geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
     ggtitle(mv_model_names[i]) +  xlab("Samples") + ylab("K-values")
 }
-do.call(grid.arrange, c(p[1:3], ncol=3))
-do.call(grid.arrange, c(p[4:6], ncol=3))
+do.call(grid.arrange, c(p[1:3], ncol=2))
+do.call(grid.arrange, c(p[4:6], ncol=2))
 ```
 
 ## Gaussian Model
