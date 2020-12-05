@@ -963,19 +963,38 @@ The results for the intermediate variables are not good at all. They improve for
 
 # Conclusion
 
+In this project we carried out a bayesian data analysis for the dataset [Breast Cancer Wisconsin (Diagnostic) Data Set](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+%28Diagnostic%29), in order to detect if a subject's tumor sample, taken with Fine-needle Aspiration (FNA), is benign or malignant. This type of previous tumor dangerousness detection is important, as a major surgical biopsy can be avoided by simply performing FNA, a simple, safe and less traumatic procedure.
+
+We proposed three different types of approaches, a linear one, a multivariate one and a gaussian one.
+
+With the linear approach we concluded that the FNA analysis results termed "Standard Error" (i.e. texture_se, area_se, etc.), were the least important ones to take into account, but the linear conclusions shouldn't be taken too seriously, as in and of itself the FNA results shouldn't be taken into account individually.
+
+For the multivariate approach, we decided to first to study each result type: "Mean", "Standard Error" and "Worst" (comprised of 6 variables each). This analysis provided us with the insight that FNA analysis results termed "Standard Error" were the least important ones as well, and that the ones termed "Worst" might be the most useful ones.
+
+The second approach to multivariate was a more thorough one, we started by first analyzing all of the variables together, and from this we obtained that the optimal amount of variables to achieved the same or better results was 3. Additionally, we also got a ranking of which variables were better. With this optimal number of variables and the best ranked ones, we then obtained a more compact model which achieved better predictions for new data using regularized horseshoe prior.
+
+AÑADIR DEL GAUSSIAN
+
 ## Issues and Improvements
 
-- hablar sobre mejorar lo de divergencias
-- Hablar sobre los k-values
-- no poder usar stan::sampling con metodos de stan_glm sin hacerlo super lioso
-- super incomodo utilizar R para trabajar con datos
-- ...
+Throughout the development of this project, some issues arose such as:
+
+- The Full Multivariate Model had a few divergences present, and even though we managed to improve the model by trying to remove the divergences by adding more iterations and tweaking the `adapt_delta`, a handful (11 divergences out of 10000 iterations) still remained. Other attempts to solve the problem yielded in heavy computations for the model and were discarded.
+
+- The Pareto-k values of the Regularized Horseshoe Multivariate Model had quite a few high valued $\hat{k}$-values (higher than 0.7), which may mean that the model could be unreliable. We did not have enough time to search for a solution to this problem.
 
 ## Group Self-Reflection
 
+In hindsight, we gained an understanding of:
 
+- The R language and using Stan and its libraries.
+
+- Analysis and selection of relevant variables from a dataset.
+
+- Different modeling approaches: i.e. Regularized Horseshoe Prior and Gaussian Model.
 
 # References
+
 - BDA3 Book
 
 - Prior Choice Recommendations
