@@ -970,7 +970,7 @@ for (i in 1:length(variables_gaussian)){
 }
 ```
 
-The results for the intermediate variables are not good at all. They improve for the first and last variable. However, they are far from the good results obtained with the other implemented models.
+The results for last two variables are not good at all. They improve for the first one. However, they are far from the good results obtained with the other implemented models.
 
 
 # Conclusion
