@@ -649,11 +649,11 @@ knitr::include_graphics('images/area_worst_densities.png')
 ```
 
 ```{r, echo=FALSE, fig.cap='densities for the smoothness_mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
-knitr::include_graphics('imagenes/smoothness_mean_densities.png')
+knitr::include_graphics('images/smoothness_mean_densities.png')
 ```
 
 ```{r, echo=FALSE, fig.cap='densities for the texture_mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
-knitr::include_graphics('imagenes/texture_mean_densities.png')
+knitr::include_graphics('images/texture_mean_densities.png')
 ```
 
 Another way to check if the predicted samples represent the reality is by directly plotting them (orange) and comparing with the target ones (grey). This is possible because the gaussian model is applied on values that are contained in the test set for the chosen variable. The concentration of points at 0 or 1 *y* values should be similar for the same values of *x*. In the given cases, by looking at the graphs, there is a very similar tendency between the real values and the simulated ones, meaning that the result is good.
