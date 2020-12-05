@@ -644,7 +644,7 @@ for (j in 1:(length(gaussian_fits))){
 }
 ```
 
-```{r, echo=FALSE, fig.cap='densities for areamworst variable', fig.align='center', fig.pos="H", out.width = '70%'}
+```{r, echo=FALSE, fig.cap='densities for area worst variable', fig.align='center', fig.pos="H", out.width = '70%'}
 knitr::include_graphics('images/area_worst_densities.png')
 ```
 
@@ -970,7 +970,7 @@ for (i in 1:length(variables_gaussian)){
 }
 ```
 
-The results for the intermediate variables are not good at all. They improve for the first and last variable. However, they are far from the good results obtained with the other implemented models.
+The results for last two variables are not good at all. They improve for the first one. However, they are far from the good results obtained with the other implemented models.
 
 
 # Conclusion
@@ -985,7 +985,7 @@ For the multivariate approach, we decided to first to study each result type: "M
 
 The second approach to multivariate was a more thorough one, we started by first analyzing all of the variables together, and from this we obtained that the optimal amount of variables to achieved the same or better results was 3. Additionally, we also got a ranking of which variables were better. With this optimal number of variables and the best ranked ones, we then obtained a more compact model which achieved better predictions for new data using regularized horseshoe prior.
 
-AÑADIR DEL GAUSSIAN
+Finally, a gaussian model was applied on the three best variables according to the previous method. With this approach, the variable providing the highest accuracy is "area_worst". However, the analysis of the pareto values may suggest that the model was optimistically biased. The obtained accuracies for the other variables are low. In a future and deeper study, the number of chains could be increased when fitting the model, as well as the number of observations, in order to determine if the response of the model improves. Nevertheless, gaussian processes have a high computational cost, so their execution is time consuming.
 
 ## Issues and Improvements
 
@@ -994,6 +994,10 @@ Throughout the development of this project, some issues arose such as:
 - The Full Multivariate Model had a few divergences present, and even though we managed to improve the model by trying to remove the divergences by adding more iterations and tweaking the `adapt_delta`, a handful (11 divergences out of 10000 iterations) still remained. Other attempts to solve the problem yielded in heavy computations for the model and were discarded.
 
 - The Pareto-k values of the Regularized Horseshoe Multivariate Model had quite a few high valued $\hat{k}$-values (higher than 0.7), which may mean that the model could be unreliable. We did not have enough time to search for a solution to this problem.
+
+- Gaussian processes require much time to fit the models, hence, for producing this report, R functions for saving the model objects were used.
+
+- The gaussian models are implemented using subsets from the initial data set. Those subsets are randomly generated, therefore, the results and accuracy might slightly vary in future executions.
 
 ## Group Self-Reflection
 
