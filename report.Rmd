@@ -1115,7 +1115,7 @@ get_stanmodel(multivariate_three$stanfit)
 ### Multivariate RHS Model Stan_GLM Code
 
 ```{r}
-get_stanmodel(multivariate_rhs$stanfit)
+get_stanmodel(multivariate_rhsp$stanfit)
 ```
 
 
