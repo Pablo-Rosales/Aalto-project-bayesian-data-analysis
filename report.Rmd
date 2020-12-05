@@ -526,8 +526,9 @@ for (variable in variables_gaussian){
   gaussian_fits <- c(gaussian_fits, gaussian_fit)
 }
 ```
-
 ```{r, include=FALSE}
+N_obs <- 200
+N_predict <- 100
 variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean")
 x_predicts_idx <- readRDS("gaussian_models/x_predicts_idx.rds")
 gaussian_fits <- c()
