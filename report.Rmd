@@ -858,7 +858,7 @@ for (i in 1:length(pareto_k_values)){
     geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
     ggtitle(variables_gaussian[i]) +  xlab("Samples") + ylab("K-values")
 }
-do.call(grid.arrange, c(p[1:3], ncol=1, nrow=3))
+do.call(grid.arrange, c(p[1:3], ncol=3, nrow=1))
 ```
 Finally, the auxiliary function for computing the accuracy of the model is implemented. The following function considers as accuracy the fraction of correctly labeled examples among all the predictions.
 
