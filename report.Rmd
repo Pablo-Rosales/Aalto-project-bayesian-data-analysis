@@ -41,7 +41,7 @@ SEED <- 48927
 ```
 
 
-
+\newpage
 # Introduction
 
 Breast cancer most commonly presents as a lump that feels different from the rest of the breast tissue. More than 80% of cases are discovered when a person detects such a lump with the fingertips and there are various methods of assessing if the detected lump is a cyst, and if so, either benign or malignant.
@@ -190,13 +190,11 @@ We have also used a Weakly Regularized Horseshoe Prior, as *Piironen+Vehtari:RHS
 
 $$
 \begin{aligned}
-
-\beta_m &\sim N(0,\ \tau \times\ \tilde\lambda) \\[2pt]
+\beta_m &\sim N(0,\tau \times \tilde{\lambda}) \\[2pt]
 \tilde\lambda_m &\sim \frac{c \times \tilde\lambda_m}{\sqrt{c^2 + \tau^2\times \tilde\lambda_m^2}} \\[2pt]
-\lambda_m &\sim HalfCauchy(0,\ 1) \\[2pt]
-c^2 &\sim InvGamma(\frac{v}{2},\ \frac{v}{2}\times s^2)\\[2pt]
-\tau &\sim HalfCauchy(0,\ \tau_0)\\[2pt]
-
+\lambda_m &\sim HalfCauchy(0,1) \\[2pt]
+c^2 &\sim InvGamma(\frac{v}{2},\frac{v}{2}\times s^2)\\[2pt]
+\tau &\sim HalfCauchy(0,\tau_0) \\[2pt]
 \end{aligned}
 $$
 
@@ -227,6 +225,8 @@ Where the vector eta is added to increase the efficiency of the sampling.
 
 # Models
 Throughout this section, the designed modeling ideas will be presented in its respective subsection: explanation of the model and code.
+
+There are specific sections after this one for the evaluations, comparisons and diagnostics of the models. These will not be mentioned in the ´Models´ section.
 
 ## Linear Models
 Per each variable contained in the data set, a separate linear model is created in order to observe its efficiency and relevance.
@@ -277,6 +277,8 @@ linear_model_bernoulli_multivariate <- rstan::stan_model(file = "models/linear_m
 
 As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
 
+For convenience we ended up sampling with `stan_glm`, whose code can be found in [!!!APPENDIX MV BLOCK CODE!!!], because there are many models and we needed to use functions that required `stan_glm` objects as input. For this reason, the sampling with the `.stan` code is commented.
+
 ### Sampling
 
 The following code draws samples from the defined stan model. Each iteration pertains to a variable block ('mean', 'se' and 'worst'), comprised of 6 variables for each of them ('texture', 'area', 'smoothness', 'concavity', 'symmetry', 'fractal_dimension'), which are passed as predictors to the model. Additionally to each of the variable blocks, the sampling also receives as input the number `N` of observations of the dataset and the binary target value (diagnosis) for each of the observations.
@@ -301,7 +303,7 @@ mv_model_names <- c("Mean Model", "SE Model", "Worst Model",
 
 mv_var_block <- list(mv_mean_block, mv_se_block, mv_worst_block)
 
-multivariate_models <- c()
+# multivariate_models <- c()
 multivariate_glms <- list()
 
 for (i in (1:3)){
@@ -315,10 +317,12 @@ for (i in (1:3)){
                                x_4=scaled_cancer_data[,var_block[[4]]],
                                x_5=scaled_cancer_data[,var_block[[5]]],
                                x_6=scaled_cancer_data[,var_block[[6]]])
-  multivariate_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
-                                           data = multivariate_block_data,
-                                           seed = SEED, refresh=0)
-  multivariate_models <- c(multivariate_models, multivariate_sampling)
+  
+  # multivariate_sampling <- rstan::sampling(linear_model_bernoulli_multivariate,
+  #                                          data = multivariate_block_data,
+  #                                          seed = SEED, refresh=0)
+  # 
+  # multivariate_models <- c(multivariate_models, multivariate_sampling)
   
   multivariate_glm <- stan_glm(paste("diagnosis ~", paste(var_block, collapse = "+")),
                                data = scaled_cancer_data,
@@ -331,9 +335,19 @@ for (i in (1:3)){
 
 ## Multivariate Model - Full Model
 
-Followed by the analysis done for each of the variables, it was decided to create three separate multivariate models, one for each variable block (type of variable): **mean**, **se** and **worst**. This was done in order to observe the efficiency and relevance over the type of the variable and see if some of the measure blocks shouldn't be considered when making the diagnosis.
+Additionally, we decided to carry out a more sensible approach, which was to start by creating and fitting a model which contains all of the 18 variables.
 
-```{r}
+The reasoning behind this model is to carry out projection predictive variable by analyzing the coefficient marginal posteriors and the solution terms, in order to obtain possible information regarding the optimal number of variables that should be used for the data and which of the variables (and in which order) have more weight in the data.
+
+### Sampling
+
+For this model, we used `generalized linear model`, `stan_glm`, using the same prior distributions for the intercept and regression coefficients as the previous models, this is: $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for the regression coefficient.
+
+In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`.
+
+The formula is the one stated above, and includes the predictive and target variables.
+
+```{r, warning=FALSE}
 multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
                               + symmetry_mean + fractal_dimension_mean
                               + texture_se + area_se + smoothness_se + concavity_se
@@ -348,13 +362,9 @@ multivariate_full <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_
 multivariate_glms <- append(multivariate_glms, list(multivariate_full))
 ```
 
-As seen in the stan model above, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
+### Stan Code
 
-### Sampling
-
-The following code draws samples from the defined stan model. Each iteration pertains to a variable block ('mean', 'se' and 'worst'), comprised of 6 variables for each of them ('texture', 'area', 'smoothness', 'concavity', 'symmetry', 'fractal_dimension'), which are passed as predictors to the model. Additionally to each of the variable blocks, the sampling also receives as input the number `N` of observations of the dataset and the binary target value (diagnosis) for each of the observations.
-
-Additionally to the `rstan::sampling` models obtained, the same models were fitted with `stan_glm`, in order to be able to make use of functions that need the input to be a stan_glm object. Both types of model objects have been saved for posteriority, for obtaining the needed diagnostics.
+CAMBIAR ESTO As seen in the stan model below, the priors are $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for each of the regression coefficients. The likelihood has been calculated using `bernoulli_logit` for the binary outcome. In order to compute the log-likelihood of the model `bernoulli_logit_lpmf` has been used as well as `bernoulli_logit_rng` to compute the predictions of the outcome.
 
 ```{r}
 #get_stanmodel(multivariate_full$stanfit)
@@ -362,24 +372,53 @@ Additionally to the `rstan::sampling` models obtained, the same models were fitt
 
 ### Coefficient Marginal posteriors
 
+For projection predictive variable selection we firstly analyzed the coefficient marginal posteriors by obtaining the plot below making use of `mcmc_areas`.
+
+We can see that the posterior coefficient for a few variables is far away from zero or have wide margins, but it's not clear what variables should be included, or how many. Some, such as `texture_mean` and `smoothness_mean`, are hinted as potentially relevant variables with correlation in joint posterior.
+
+Just looking at the marginals has the problem that it can perfectly occur that correlating variables have marginal posteriors overlapping zero or far from zero, but joint posterior typically does not include zero. Because of this, further projection predictive variable selection must be carried out.
+
 ```{r}
 mcmc_areas(as.matrix(multivariate_full))
 ```
 
 ### Solution Terms
 
-PONER AQUI LOS SOLUTION TERMS
-PONER AQUI EL PLOT DE VARIABLES
+Because we want to subject all variables to selection, we continue with projection predictive variable selection which can be easily done with `cv_varsel` function. This also computes a LOO-CV estimate of the predictive performance for the best models with a certain number of variables.
 
-```{r}
+As mentioned above, one of the reasonings behind using this full model is to obtain the optimal number of variables for which the predictive performance is the same as the full model or better. By looking at the plot we can see that we can achieve a higher predictive performance using only 3 variables instead of 18. This can be corroborated further by running the `suggest_size` function, which tells us that the optimal number of variables for equal performance is 2, but better results can be achieved with 3.
+
+```{r, echo=FALSE, fig.cap='cv_varsel function output', fig.align='center', fig.pos="H", out.width = '80%'}
+knitr::include_graphics('images/cv_varsel.png')
+```
+
+The other reasoning behind the full model was which of the variables are the best for obtaining better predictive performance. We can obtain a ranking of best variables to be inserted in the model with `solution_terms`, and from this ranking we choose the first 3 best variables: `area_worst`, `smoothness_mean` and `texture_mean`.
+
+```{r, echo=FALSE, fig.cap='solution_terms function output', fig.align='center', fig.pos="H", out.width = '80%'}
+knitr::include_graphics('images/solution_terms.png')
+```
+
+Note: these functions are computationally complex and require quite a large amount of time to be executed and we needed to run the code many times to fix errors and other reasons. Because of this, the code block has been made to pass the execution, but photos of the correct execution have been inserted.
+
+```{r, eval=FALSE, echo=FALSE}
 refmodel <- get_refmodel(multivariate_full)
-vs <- cv_varsel(refmodel, method = "forward", cv_method = 'LOO',
-                         nloo = nrow(scaled_cancer_data))
+vs <- cv_varsel(refmodel, method = "forward", cv_method = 'LOO', nloo = nrows)
+suggest_size(vs, alpha=0.1)
 solution_terms(vs)
 plot(vs, stats = c('elpd', 'rmse'))
 ```
 
 ## Multivariate Model - Three Variables Model
+
+This model is the result of applying projection predictive variable selection to the full multivariate model of 18 variables. In this model we simply take the 3 best variables obtained using the previous analysis and study the outcomes.
+
+### Sampling
+
+For this model, we used `generalized linear model`, `stan_glm`, using the same prior distributions for the intercept and regression coefficients as the previous models, this is: $\alpha \sim N(0,1)$ for the intercept coefficient and $\beta_n \sim StudentT(3,0,1)$ for the regression coefficient.
+
+In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`.
+
+The formula is the one stated above, and includes the 3 best ranked predictive variables and the target.
 
 ```{r}
 multivariate_three <- stan_glm(diagnosis ~ area_worst + smoothness_mean + texture_mean,
@@ -392,11 +431,29 @@ multivariate_glms <- append(multivariate_glms, list(multivariate_three))
 
 ### Stan Code
 
+EXPLICAR EL CODE
+
 ```{r}
 #get_stanmodel(multivariate_three$stanfit)
 ```
 
 ## Multivariate Model - Regularized Horseshoe Model
+
+As we already know that most of the variables are irrelevant thanks to the previous projection predictive variable selection analysis, and only three variables are relevant in order to obtain a better performance, we decided to implement a Regularized Horseshoe Prior approach which has been proven to be a worthy alternative.
+
+### Sampling
+
+For this model, we used `generalized linear model`, `stan_glm`, but instead of using the same priors for the intercept and regression coefficients we use the weakly informative regularized horseshoe prior which includes prior assumption that some of the variables might be irrelevant.
+
+This is the reaso
+
+We have also used a Weakly Regularized Horseshoe Prior, as *Piironen+Vehtari:RHS:2017*, where we included the prior assumption that a number of variables are more relevant that the rest. The assumption origin will be discussed in a future section, but as a summary, it has been assumed that there are 3 relevant variables, while the others are irrelevant.
+
+
+
+In order for the model to compute the predictions of the diagnosis outcome we used binomial logistic regression, by making use of `stan_glm`'s `family` for which we chose `binomial` with `link = "logit"`.
+
+The formula is the one stated above, and includes the 3 best ranked predictive variables and the target.
 
 ```{r}
 multivariate_rhsp <- stan_glm(diagnosis ~ texture_mean + area_mean + smoothness_mean + concavity_mean
@@ -428,6 +485,7 @@ The common **stan code** for each variable is designed as follows:
 ```{r}
 writeLines(readLines("models/gaussian_process_bernoulli.stan"))
 ``` 
+
 In order to later assess the performance of the gaussian model based on the quality of its predictions, the data set is divided into two subsets, one for "training" the model, containing a higher number of observations, and another one for "testing" the model.
 
 ```{r}
@@ -439,7 +497,8 @@ test_set <- scaled_cancer_data[test_index, ]
 ```
 
 The gaussian model was carried out over the four best variables contained in the set of optimal variables obtained using the previous models.
-```{r}
+
+```{r, eval=FALSE, echo=FALSE}
 variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean", 
                         "area_mean")
 gaussian_fits <- c()
@@ -451,7 +510,7 @@ gaussian_model <- rstan::stan_model(file = "models/gaussian_process_bernoulli.st
 
 From the training set, 200 randomly selected observations are considered. Gaussian models are computationally slow, hence, using the total number of observations would take much time. From the test set, 100 observations are chosen, also randomly.
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 for (variable in variables_gaussian){
   cat("\nSampling from model with variable: ", variable, "\n")
   x_obs_idx <- sort(sample(1:length(train_set[,variable]), N_obs))
@@ -495,7 +554,7 @@ Escribir que se ha aumentado el numero de cadenas,iteraciones y adapt_delta. Esc
 
 ## Gaussian Model Diagnostics
 In order to visually assess the convergence of the gaussian model, the chains for the scalar parameters are plotted.
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 traceplot(gaussian_fits[[1]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 traceplot(gaussian_fits[[2]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 traceplot(gaussian_fits[[3]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
@@ -577,8 +636,10 @@ bayesplot_grid(ppc_dens_overlay(scaled_cancer_data$diagnosis, y_sims[[6]]),
 ```
 
 ## Gaussian Model
+
 The density of the diagnosis in the test set is printed in black color. Overlapping, the densities for the predictions of the first 50 iterations. This graph enables visual assessment of the quality of the predictions. Preliminarly, the results seem to be satisfactory.
-```{r}
+
+```{r, eval=FALSE, echo=FALSE}
 layout(mat = matrix(c(1,2,3,4), nrow = 2, ncol = 2),heights = c(1, 1,1,1), widths = c(1,1,1,1))
 for (j in 1:(length(gaussian_fits))){
   params_gaussian <- extract(gaussian_fits[[j]])
@@ -590,7 +651,8 @@ for (j in 1:(length(gaussian_fits))){
 ```
 
 Another way to check if the predicted samples represent the reality is by directly plotting them (orange) and comparing with the target ones (grey). This is possible because the gaussian model is applied on values that are contained in the test set for the chosen variable. The concentration of points at 0 or 1 *y* values should be similar for the same values of *x*. In the given cases, by looking at the graphs, there is a very similar tendency between the real values and the simulated ones, meaning that the result is good.
-```{r}
+
+```{r, eval=FALSE, echo=FALSE}
 for (j in 1:(length(gaussian_fits))){
   params_gaussian <- extract(gaussian_fits[[j]])
   layout(mat = matrix(c(1,2), nrow = 1, ncol = 2),heights = c(1, 1), widths = c(1,1))
@@ -658,6 +720,7 @@ do.call(grid.arrange, c(p[9:12], ncol=2))
 do.call(grid.arrange, c(p[13:16], ncol=2))
 do.call(grid.arrange, c(p[17:18], ncol=2))
 ```
+
 ## Multivariate Models
 By using **Leave-One-Out Cross Validation**, we obtain the PSIS-LOO estimates for each of the variable blocks for the Multivariate Model for posterior model comparison.
 
@@ -673,12 +736,10 @@ EXPLICAR ESTA FUNCTION AUXILIAR Y PONERLA EN OTRO SITIO
 model_accuracies <- function(model){
   y_pred <- posterior_epred(model)
   preds <- colMeans(y_pred)
-  predicted <- predict(model, newdata=scaled_cancer_data, type='response')
-  
   pr <- as.integer(preds >= 0.5)
   acc <- round(mean(xor(pr, as.integer(scaled_cancer_data$diagnosis==0))), 4)
   
-  conf_matrix <- confusionMatrix(factor(round(predicted)), factor(scaled_cancer_data$diagnosis))
+  conf_matrix <- confusionMatrix(factor(round(pr)), factor(scaled_cancer_data$diagnosis))
   return (list(acc, list(conf_matrix)))
 }
 ```
@@ -730,7 +791,7 @@ p[6]
 
 ## Gaussian Model
 When fitting the gaussian model with the four "optimal" variables, the results of the Pareto k values are, in general, good. However, for those variables for which the model yields a higher accuracy, the k values are larger, in some occasions, over 0.7. This might be representative of a model which is optimistically biased.
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 pareto_k_values <- list()
 linear_loo_estimates_df <- data.frame()
 
@@ -750,7 +811,7 @@ cat("-- Gaussian Model Comparison")
 print(linear_loo_estimates_df)
 ```
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 p <- list()
 for (i in 1:length(pareto_k_values)){
   df <- data.frame(pareto_k_values[[i]])
@@ -764,7 +825,7 @@ do.call(grid.arrange, c(p[1:4], ncol=2, nrow=2))
 ```
 Finally, the auxiliary function for computing the accuracy of the model is implemented. The following function considers as accuracy the fraction of correctly labeled examples among all the predictions.
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 accuracy_gaussian <- function(predictions, labels){
   trues <- 0
   falses <- 0
@@ -797,7 +858,7 @@ for (i in 1:length(multivariate_glms)){
 
 In the case of the gaussian processes, making use of the implemented function, the obtained accuracies are computed as:
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 accuracies <- c()
 for (j in 1:(length(gaussian_fits))){
   accuracy_gaussian_sum <- 0
@@ -814,7 +875,7 @@ for (j in 1:(length(gaussian_fits))){
 
 Yielding the following results:
 
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 for (i in 1:length(variables_gaussian)){
   cat("\nGaussian model accuracy for ", variables_gaussian[i], " is: ", round(accuracies[i],3))
 }
@@ -907,7 +968,7 @@ for (i in 1:length(multivariate_glms)){
 
 ### Monitor
 Monitor output has been omitted for convenience, only relevant variables (Rhat, Bulk_ESS and Tail_ESS) are shown.
-```{r}
+```{r, eval=FALSE, echo=FALSE}
 for (i in 1:length(gaussian_fits)){
   cat("\nMonitor for model variable:", variables_gaussian[i], '\n')
   cat("-------------------------\n")
