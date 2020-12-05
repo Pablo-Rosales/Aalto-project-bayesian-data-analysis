@@ -644,15 +644,15 @@ for (j in 1:(length(gaussian_fits))){
 }
 ```
 
-```{r, echo=FALSE, fig.cap='densities for area_worst variable', fig.align='center', fig.pos="H", out.width = '70%'}
+```{r, echo=FALSE, fig.cap='densities for area worst variable', fig.align='center', fig.pos="H", out.width = '70%'}
 knitr::include_graphics('images/area_worst_densities.png')
 ```
 
-```{r, echo=FALSE, fig.cap='densities for the smoothness_mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
+```{r, echo=FALSE, fig.cap='densities for the smoothness mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
 knitr::include_graphics('images/smoothness_mean_densities.png')
 ```
 
-```{r, echo=FALSE, fig.cap='densities for the texture_mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
+```{r, echo=FALSE, fig.cap='densities for the texture mean variable', fig.align='center', fig.pos="H", out.width = '70%'}
 knitr::include_graphics('images/texture_mean_densities.png')
 ```
 
