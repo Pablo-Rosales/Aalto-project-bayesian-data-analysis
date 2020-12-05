@@ -421,11 +421,14 @@ multivariate_glms <- append(multivariate_glms, list(multivariate_rhsp))
 ## Gaussian Model
 The last model that was considered for this project was a Gaussian Process based model. Gaussian models provide a probability distribution over functions. They are useful for representing those datasets that cannot be easily adjusted to a line following a regression procedure. A gaussian process consists of generating higher degree polynomial functions and assigning to those functions a probability. Therefore, by taking the mean over the probability distribution, the most probable fit is obtained.
 
-$\linebreak$
-
-In order to later assess the performance of the gaussian model based on the quality of its predictions, the data set is divided into two subsets, one for "training" the model, containing a higher number of observations, and another one for "testing" the model.
-
 ### Stan code
+
+The common **stan code** for each variable is designed as follows:
+
+```{r}
+writeLines(readLines("models/gaussian_process_bernoulli.stan"))
+``` 
+In order to later assess the performance of the gaussian model based on the quality of its predictions, the data set is divided into two subsets, one for "training" the model, containing a higher number of observations, and another one for "testing" the model.
 
 ```{r}
 train_index <- sample(1:nrow(scaled_cancer_data), 0.8*nrow(scaled_cancer_data))
@@ -466,23 +469,6 @@ for (variable in variables_gaussian){
 }
 ```
 
-Finally, an additional function for computing the accuracy of the model is implemented. The following function considers as accuracy the fraction of correctly labeled examples among all the predictions.
-
-```{r}
-accuracy_gaussian <- function(predictions, labels){
-  trues <- 0
-  falses <- 0
-  for (i in 1:length(predictions)){
-    if (predictions[i] == labels[i]){
-      trues = trues +1
-    }
-    else{
-      falses = falses +1
-    }
-  }
-  return(trues/(falses+trues))
-} 
-```
 
 # Convergence Diagnostics
 ## Diagnostic Metrics
@@ -508,7 +494,7 @@ ESCRIBIR AQUI SOBRE TODO EN UN MISMO APARTADO
 Escribir que se ha aumentado el numero de cadenas,iteraciones y adapt_delta. Escribir el porque
 
 ## Gaussian Model Diagnostics
-In order to visually assess convergence of the gaussian model, the chains for the scalar parameters are plotted.
+In order to visually assess the convergence of the gaussian model, the chains for the scalar parameters are plotted.
 ```{r}
 traceplot(gaussian_fits[[1]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 traceplot(gaussian_fits[[2]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
@@ -776,6 +762,24 @@ for (i in 1:length(pareto_k_values)){
 }
 do.call(grid.arrange, c(p[1:4], ncol=2, nrow=2))
 ```
+Finally, the auxiliary function for computing the accuracy of the model is implemented. The following function considers as accuracy the fraction of correctly labeled examples among all the predictions.
+
+```{r}
+accuracy_gaussian <- function(predictions, labels){
+  trues <- 0
+  falses <- 0
+  for (i in 1:length(predictions)){
+    if (predictions[i] == labels[i]){
+      trues = trues +1
+    }
+    else{
+      falses = falses +1
+    }
+  }
+  return(trues/(falses+trues))
+} 
+```
+
 
 # Predictive Performance Assessment
 In order to decide whether the overall diagnosis ability of our model is reliable or not, we can take a look at the accuracy. Given the nature of the diagnosis, that a negligence in this medical diagnostic could be harmful for a subject. Thus, we take into account the ratio of false positives and negatives. To accomplish this we visualize the confusion matrix produced by the function `confusionMatrix`. The output provides insightful measures for our data: sensitivity and specificity are statistical measures of the performance of a binary classification test that are widely used in medicine: Sensitivity measures the proportion of true positives that are correctly identified  whereas specificity measures the proportion of true negatives.
