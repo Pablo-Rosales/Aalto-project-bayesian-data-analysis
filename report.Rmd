@@ -467,7 +467,7 @@ writeLines(readLines("models/gaussian_process_bernoulli.stan"))
 
 In order to later assess the performance of the gaussian model based on the quality of its predictions, the data set is divided into two subsets, one for "training" the model, containing a higher number of observations, and another one for "testing" the model.
 
-```{r}
+```{r, eval=FALSE}
 train_index <- sample(1:nrow(scaled_cancer_data), 0.8*nrow(scaled_cancer_data))
 test_index <- setdiff(1:nrow(scaled_cancer_data), train_index)
 
@@ -475,11 +475,10 @@ train_set <-scaled_cancer_data[train_index, ]
 test_set <- scaled_cancer_data[test_index, ]
 ```
 
-The gaussian model was carried out over the four best variables contained in the set of optimal variables obtained using the previous models.
+The gaussian model was carried out over the three best variables contained in the set of optimal variables obtained using the previous models.
 
-```{r, eval=FALSE, echo=FALSE}
-variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean", 
-                        "area_mean")
+```{r, eval=FALSE}
+variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean")
 gaussian_fits <- c()
 x_predicts_idx <- c()
 N_obs <- 200
@@ -490,7 +489,7 @@ gaussian_model <- rstan::stan_model(file =
 
 From the training set, 200 randomly selected observations are considered. Gaussian models are computationally slow, hence, using the total number of observations would take much time. From the test set, 100 observations are chosen, also randomly.
 
-```{r, eval=FALSE, echo=FALSE}
+```{r, eval=FALSE}
 for (variable in variables_gaussian){
   cat("\nSampling from model with variable: ", variable, "\n")
   x_obs_idx <- sort(sample(1:length(train_set[,variable]), N_obs))
@@ -507,6 +506,23 @@ for (variable in variables_gaussian){
   gaussian_fits <- c(gaussian_fits, gaussian_fit)
 }
 ```
+```{r, include=FALSE}
+N_obs <- 200
+N_predict <- 100
+variables_gaussian <- c("area_worst", "smoothness_mean", "texture_mean")
+x_predicts_idx <- readRDS("gaussian_models/x_predicts_idx.rds")
+gaussian_fits <- c()
+
+test_set <- readRDS("gaussian_datasets/test_set.Rda") 
+train_set <- readRDS("gaussian_datasets/train_set.Rda")
+
+for (i in 1:(length(variables_gaussian))){
+  fit <- readRDS(paste("gaussian_models/",
+                       variables_gaussian[i],"_gaussian_model.rds"))
+  gaussian_fits <- c(gaussian_fits, fit)
+}
+```
+
 
 
 # Convergence Diagnostics
@@ -539,11 +555,10 @@ All multivariate models turned great regarding divergences. It must be noted tha
 
 ## Gaussian Model Diagnostics
 In order to visually assess the convergence of the gaussian model, the chains for the scalar parameters are plotted.
-```{r, eval=FALSE, echo=FALSE}
+```{r, echo=FALSE}
 traceplot(gaussian_fits[[1]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 traceplot(gaussian_fits[[2]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 traceplot(gaussian_fits[[3]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
-traceplot(gaussian_fits[[4]], pars=c("rho", "alpha", "a"), nrow=3, ncol=1)
 ```
 
 As in previous cases, the values obtained from applying the function `monitor`are satisfactory. $\hat{R}$ provides a valid scalar metric for convergence checking based on computing the division between the pooled variance of the chains and the individual variance of each of them. Obtaining values close to 1, as in the current case, means that the chains happen to have very similar distributions. Finally, the results yielded for the effective sample size are higher than 100.
@@ -624,11 +639,11 @@ bayesplot_grid(ppc_mv_1, ppc_mv_2, ppc_mv_3, ppc_mv_4, ppc_mv_5, ppc_mv_6,
 
 The density of the diagnosis in the test set is printed in black color. Overlapping, the densities for the predictions of the first 50 iterations. This graph enables visual assessment of the quality of the predictions. Preliminarly, the results seem to be satisfactory.
 
-```{r, eval=FALSE, echo=FALSE}
-layout(mat = matrix(c(1,2,3,4), nrow = 2, ncol = 2),heights = c(1, 1,1,1), widths = c(1,1,1,1))
+```{r, echo=FALSE}
 for (j in 1:(length(gaussian_fits))){
   params_gaussian <- extract(gaussian_fits[[j]])
-  plot(density(test_set$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5), main=variables_gaussian[j], ylab="density", xlab="", lwd=3)
+  plot(density(test_set$diagnosis), xlim=c(-0.5, 1.5), ylim=c(0,2.5),
+       main=variables_gaussian[j], ylab="density", xlab="", lwd=3)
   for (i in 1:50){
   lines(density(params_gaussian$y_predict[i,]), col="cyan")
   }
@@ -637,7 +652,7 @@ for (j in 1:(length(gaussian_fits))){
 
 Another way to check if the predicted samples represent the reality is by directly plotting them (orange) and comparing with the target ones (grey). This is possible because the gaussian model is applied on values that are contained in the test set for the chosen variable. The concentration of points at 0 or 1 *y* values should be similar for the same values of *x*. In the given cases, by looking at the graphs, there is a very similar tendency between the real values and the simulated ones, meaning that the result is good.
 
-```{r, eval=FALSE, echo=FALSE}
+```{r, echo=FALSE}
 for (j in 1:(length(gaussian_fits))){
   params_gaussian <- extract(gaussian_fits[[j]])
   layout(mat = matrix(c(1,2), nrow = 1, ncol = 2),heights = c(1, 1), widths = c(1,1))
@@ -801,19 +816,23 @@ do.call(grid.arrange, c(p[4:6], ncol=3))
 
 ## Gaussian Model
 When fitting the gaussian model with the four "optimal" variables, the results of the Pareto k values are, in general, good. However, for those variables for which the model yields a higher accuracy, the k values are larger, in some occasions, over 0.7. This might be representative of a model which is optimistically biased.
-```{r, eval=FALSE, echo=FALSE}
+```{r}
 pareto_k_values <- list()
 linear_loo_estimates_df <- data.frame()
 
 for (j in 1:(length(gaussian_fits))){
   cat("-Monitoring variable: ", variables_gaussian[j], "\n")
   model <- gaussian_fits[[j]]
-  model_log_lik <- extract_log_lik(model, parameter_name="log_lik", merge_chains=FALSE)
+  model_log_lik <- extract_log_lik(model, parameter_name="log_lik", 
+                                   merge_chains=FALSE)
   model_r_eff <- relative_eff(exp(model_log_lik))
   model_loo <- loo(model_log_lik, r_eff = model_r_eff)
-  pareto_k_values <- append(pareto_k_values, list(model_loo$diagnostics$pareto_k))
+  pareto_k_values <- append(pareto_k_values, 
+                            list(model_loo$diagnostics$pareto_k))
   
-  aux_df <- data.frame("variable" = variables_gaussian[j], "elpd_loo" = model_loo$estimates[1], "p_loo" = model_loo$estimates[2])
+  aux_df <- data.frame("variable" = variables_gaussian[j], 
+                       "elpd_loo" = model_loo$estimates[1], 
+                       "p_loo" = model_loo$estimates[2])
   linear_loo_estimates_df <- rbind(linear_loo_estimates_df, aux_df)
 }
 
@@ -821,7 +840,7 @@ cat("-- Gaussian Model Comparison")
 print(linear_loo_estimates_df)
 ```
 
-```{r, eval=FALSE, echo=FALSE}
+```{r}
 p <- list()
 for (i in 1:length(pareto_k_values)){
   df <- data.frame(pareto_k_values[[i]])
@@ -831,7 +850,7 @@ for (i in 1:length(pareto_k_values)){
     geom_hline(yintercept=0.7, linetype="dashed", size=1, color="#0859C6") +
     ggtitle(variables_gaussian[i]) +  xlab("Samples") + ylab("K-values")
 }
-do.call(grid.arrange, c(p[1:4], ncol=2, nrow=2))
+do.call(grid.arrange, c(p[1:3], ncol=1, nrow=3))
 ```
 Finally, the auxiliary function for computing the accuracy of the model is implemented. The following function considers as accuracy the fraction of correctly labeled examples among all the predictions.
 
